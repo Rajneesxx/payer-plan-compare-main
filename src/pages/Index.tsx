@@ -165,11 +165,19 @@ const Index = () => {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div>
-                    <Label htmlFor="openai-key">Rapid-Secret Key</Label>
-                    <Input id="openai-key" type="password" value={openAiKey} onChange={(e) => setOpenAiKey(e.target.value)} />
-                  </div>
-
+                <div className="space-y-2">
+                  <Label htmlFor="openai-key" className="text-sm font-medium text-foreground">
+                    Rapid-Secret Key
+                  </Label>
+                  <Input
+                    id="openai-key"
+                    type="password"
+                    placeholder="Enter your Rapid-Secret key"
+                    value={openAiKey}
+                    onChange={(e) => setOpenAiKey(e.target.value)}
+                    className="w-full bg-card border-border shadow-sm"
+                  />
+                </div>
                   <Separator />
 
                   <PayerPlanSelector
