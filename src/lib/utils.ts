@@ -28,3 +28,4 @@ export const downloadJSON = (data: object, filename = "extracted-data.json") => 
 
   URL.revokeObjectURL(url);
 };
+
