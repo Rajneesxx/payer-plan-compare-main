@@ -13,79 +13,6 @@ import { useToast } from "@/hooks/use-toast";
 import { PAYER_PLANS, FIELD_MAPPINGS, FIELD_SUGGESTIONS, type PayerPlan, type ExtractedData, type ComparisonResult } from "@/constants/fields";
 import { extractDataApi, compareDataApi } from "@/services/extractionApi";
 import { cn } from "@/lib/utils";
-import { extractDataApi } from "@/services/extractDataApi";
-import { copyToClipboard, downloadJSON } from "@/lib/utils";
-
-export default function HomePage() {
-  const [file, setFile] = useState<File | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<object | null>(null);
-
-  const handleUpload = async () => {
-    if (!file) return alert("Please select a PDF first.");
-    setLoading(true);
-
-    try {
-      // Example: pass payer + fields
-      const extracted = await extractDataApi(file, "BlueCross", ["ClaimID", "Amount"]);
-      setResult(extracted);
-    } catch (err) {
-      console.error("Extraction failed:", err);
-      alert("Failed to extract data.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="p-6 max-w-2xl mx-auto">
-      <h1 className="text-2xl font-bold mb-4">PDF Extractor</h1>
-
-      {/* File input */}
-      <input
-        type="file"
-        accept="application/pdf"
-        onChange={(e) => setFile(e.target.files?.[0] || null)}
-        className="mb-4"
-      />
-
-      <button
-        onClick={handleUpload}
-        disabled={!file || loading}
-        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400"
-      >
-        {loading ? "Extracting..." : "Extract Data"}
-      </button>
-
-      {/* Show results */}
-      {result && (
-        <div className="mt-6 p-4 border rounded-lg bg-gray-50">
-          <h2 className="text-lg font-semibold mb-2">Extracted Data</h2>
-          <pre className="bg-black text-white p-2 rounded overflow-x-auto text-sm">
-            {JSON.stringify(result, null, 2)}
-          </pre>
-
-          <div className="flex gap-3 mt-3">
-            <button
-              onClick={() => copyToClipboard(result)}
-              className="px-4 py-2 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600"
-            >
-              Copy
-            </button>
-            <button
-              onClick={() => downloadJSON(result)}
-              className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600"
-            >
-              Download
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-
 const Index = () => {
   const [openAiKey, setOpenAiKey] = useState<string>("");
   const [payerPlan, setPayerPlan] = useState<PayerPlan>(PAYER_PLANS.QLM);
@@ -446,4 +373,5 @@ const Index = () => {
   );
 };
 
+export default Index;
 
