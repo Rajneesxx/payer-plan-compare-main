@@ -31,9 +31,10 @@ const Index = () => {
   const [customPlanName, setCustomPlanName] = useState<string>("");
   const [customFields, setCustomFields] = useState<string[]>([""]);
 
-  const resolvedCustomFields = customFields.filter((f) => f.trim() !== "");
-
   const { toast } = useToast();
+
+  // Always send only non-empty fields to API
+  const resolvedCustomFields = customFields.filter((f) => f.trim() !== "");
 
   const addCustomField = () => setCustomFields([...customFields, ""]);
   const removeCustomField = (index: number) =>
@@ -49,12 +50,10 @@ const Index = () => {
       toast({ title: "No files selected", description: "Please upload at least one PDF file.", variant: "destructive" });
       return;
     }
-
     if (uploadMode === "compare" && files.length < 2) {
       toast({ title: "Two files required", description: "Please upload two PDFs for comparison.", variant: "destructive" });
       return;
     }
-
     if (!openAiKey) {
       toast({ title: "Missing Rapid-Secret key", description: "Enter your key to proceed.", variant: "destructive" });
       return;
@@ -101,6 +100,7 @@ const Index = () => {
   const canProcess = files.length > 0 && (uploadMode === "single" || files.length === 2);
   const hasResults = Boolean(extractedData || comparisonResults);
 
+  // Merged panel always renders all customFields to prevent blank inputs
   const fieldList = payerPlan === PAYER_PLANS.CUSTOM ? customFields : FIELD_MAPPINGS[payerPlan];
 
   return (
@@ -168,7 +168,6 @@ const Index = () => {
 
             {/* Right Panel */}
             <div className="space-y-6">
-              {/* Field Preview + Custom Fields merged */}
               <Card className="bg-card shadow-md border border-border/70">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
@@ -180,50 +179,47 @@ const Index = () => {
                 </CardHeader>
                 <CardContent className="max-h-96 overflow-y-auto space-y-2">
                   <TooltipProvider>
-                    {fieldList.map((field, index) => {
-                      const suggestions = FIELD_SUGGESTIONS[payerPlan]?.[field] || [];
-                      return (
-                        <div key={index} className="flex items-center justify-between py-2 border-b border-border/50 last:border-0 gap-2">
-                          <div className="flex-1">
-                            {payerPlan === PAYER_PLANS.CUSTOM ? (
-                              <Input
-                                placeholder={`Field ${index + 1}`}
-                                value={field}
-                                onChange={(e) => updateCustomField(index, e.target.value)}
-                              />
-                            ) : (
-                              <div className="text-sm font-medium text-foreground">{index + 1}. {field}</div>
-                            )}
-                          </div>
-
-                          {suggestions.length > 0 && (
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <button className="text-muted-foreground hover:text-foreground">
-                                  <Info className="h-4 w-4" />
-                                </button>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <div className="text-xs">
-                                  <div className="font-medium text-foreground mb-1">Also look for:</div>
-                                  <ul className="list-disc pl-4 space-y-0.5">
-                                    {suggestions.map((s, idx) => (
-                                      <li key={idx} className="text-muted-foreground">{s}</li>
-                                    ))}
-                                  </ul>
-                                </div>
-                              </TooltipContent>
-                            </Tooltip>
-                          )}
-
-                          {payerPlan === PAYER_PLANS.CUSTOM && customFields.length > 1 && (
-                            <Button variant="ghost" size="sm" onClick={() => removeCustomField(index)}>
-                              <X className="h-4 w-4" />
-                            </Button>
+                    {fieldList.map((field, index) => (
+                      <div key={index} className="flex items-center justify-between py-2 border-b border-border/50 last:border-0 gap-2">
+                        <div className="flex-1">
+                          {payerPlan === PAYER_PLANS.CUSTOM ? (
+                            <Input
+                              placeholder={`Field ${index + 1}`}
+                              value={field}
+                              onChange={(e) => updateCustomField(index, e.target.value)}
+                            />
+                          ) : (
+                            <div className="text-sm font-medium text-foreground">{index + 1}. {field}</div>
                           )}
                         </div>
-                      );
-                    })}
+
+                        {FIELD_SUGGESTIONS[payerPlan]?.[field]?.length > 0 && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button className="text-muted-foreground hover:text-foreground">
+                                <Info className="h-4 w-4" />
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <div className="text-xs">
+                                <div className="font-medium text-foreground mb-1">Also look for:</div>
+                                <ul className="list-disc pl-4 space-y-0.5">
+                                  {FIELD_SUGGESTIONS[payerPlan][field].map((s, idx) => (
+                                    <li key={idx} className="text-muted-foreground">{s}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                            </TooltipContent>
+                          </Tooltip>
+                        )}
+
+                        {payerPlan === PAYER_PLANS.CUSTOM && customFields.length > 1 && (
+                          <Button variant="ghost" size="sm" onClick={() => removeCustomField(index)}>
+                            <X className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
+                    ))}
 
                     {payerPlan === PAYER_PLANS.CUSTOM && (
                       <Button variant="outline" size="sm" onClick={addCustomField} className="mt-2">
@@ -234,7 +230,6 @@ const Index = () => {
                 </CardContent>
               </Card>
 
-              {/* Results */}
               {hasResults ? (
                 extractedData ? (
                   <ExtractedDataTable mode="single" data={extractedData} fileName={files[0]?.name} payerPlan={payerPlan} />
@@ -253,9 +248,7 @@ const Index = () => {
                       <FileText className="h-8 w-8 text-muted-foreground" />
                     </div>
                     <h3 className="text-lg font-medium text-foreground mb-2">No data extracted yet</h3>
-                    <p className="text-muted-foreground">
-                      Upload PDFs and click "Extract Data" or "Compare Files" to see results here.
-                    </p>
+                    <p className="text-muted-foreground">Upload PDFs and click "Extract Data" or "Compare Files" to see results here.</p>
                   </CardContent>
                 </Card>
               )}
