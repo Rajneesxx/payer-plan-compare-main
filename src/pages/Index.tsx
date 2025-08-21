@@ -263,7 +263,7 @@ const Index = () => {
                                     {idx + 1}.
                                   </div>
                                   <Input
-                                    placeholder={`Field ${idx + 1} (e.g., Patient Name, Insurance ID)`}
+                                    placeholder={`Field ${idx + 1} `}
                                     value={field}
                                     onChange={(e) => updateCustomField(idx, e.target.value)}
                                     className="flex-1 h-9"
