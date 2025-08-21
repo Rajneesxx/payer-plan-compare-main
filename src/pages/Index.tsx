@@ -133,6 +133,16 @@ const Index = () => {
       );
     }
   };
+  // Reset 
+  const handlePayerPlanChange = (value) => {
+    if (value === PAYER_PLANS.CUSTOM) {
+      setExtractedData(null);
+      setComparisonResults(null);
+      setCustomFields([""]);
+      setCustomPlanName("");
+    }
+    setPayerPlan(value);
+  };
 
   return (
         <div className="min-h-screen bg-gradient-surface">
@@ -182,7 +192,7 @@ const Index = () => {
 
                   <PayerPlanSelector
                     value={payerPlan}
-                    onValueChange={(value) => setPayerPlan(value)}
+                    onValueChange={handlePayerPlanChange}
                     options={[
                       { value: PAYER_PLANS.QLM, label: "QLM" },
                       { value: PAYER_PLANS.ALKOOT, label: "ALKOOT" },
