@@ -88,10 +88,10 @@ const Index = () => {
   const presetFields = FIELD_MAPPINGS[payerPlan] || [];
   const presetSuggestions = FIELD_SUGGESTIONS[payerPlan] || [];
 
-  console.log("Current payerPlan:", payerPlan); // Debug log
+  console.log("Current payerPlan:", payerPlan, "PAYER_PLANS.CUSTOM:", PAYER_PLANS.CUSTOM); // Enhanced debug log
 
   return (
-    <div className="min-h-screen bg-gradient-surface">
+    <div className="min-h-screen bg-gradient-surface" key={payerPlan}> {/* Force re-render on payerPlan change */}
       <div className="container mx-auto px-4 py-12 max-w-6xl">
         <div className="rounded-3xl bg-foreground/5 shadow-lg ring-1 ring-black/5 p-6 backdrop-blur-sm">
           <div className="mb-10 text-center">
