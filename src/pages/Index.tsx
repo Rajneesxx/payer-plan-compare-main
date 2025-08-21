@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -87,7 +86,9 @@ const Index = () => {
   const canProcess = files.length > 0 && (uploadMode === "single" || files.length === 2);
 
   const presetFields = FIELD_MAPPINGS[payerPlan] || [];
-  const presetSuggestions = FIELD_SUGGESTIONS[payerPlan] || {};
+  const presetSuggestions = FIELD_SUGGESTIONS[payerPlan] || [];
+
+  console.log("Current payerPlan:", payerPlan); // Debug log
 
   return (
     <div className="min-h-screen bg-gradient-surface">
@@ -120,7 +121,10 @@ const Index = () => {
 
                   <PayerPlanSelector
                     value={payerPlan}
-                    onValueChange={setPayerPlan}
+                    onValueChange={(value) => {
+                      console.log("Payer plan changed to:", value); // Debug log
+                      setPayerPlan(value);
+                    }}
                     options={[
                       { value: PAYER_PLANS.QLM, label: "QLM" },
                       { value: PAYER_PLANS.ALKOOT, label: "ALKOOT" },
@@ -139,6 +143,7 @@ const Index = () => {
                           onChange={(e) => setCustomPlanName(e.target.value)}
                         />
                       </div>
+                      <div>Custom plan selected (debug)</div> {/* Debug indicator */}
                     </div>
                   )}
 
