@@ -85,11 +85,9 @@ const Index = () => {
   };
 
   const canProcess = files.length > 0 && (uploadMode === "single" || files.length === 2);
-  const hasResults = Boolean(extractedData || comparisonResults);
 
-  // For panel
-  const fieldsToShow = payerPlan === PAYER_PLANS.CUSTOM ? resolvedCustomFields : FIELD_MAPPINGS[payerPlan] || {};
-  const suggestions = FIELD_SUGGESTIONS[payerPlan] || {};
+  const presetFields = FIELD_MAPPINGS[payerPlan] || [];
+  const presetSuggestions = FIELD_SUGGESTIONS[payerPlan] || {};
 
   return (
     <div className="min-h-screen bg-gradient-surface">
@@ -145,7 +143,9 @@ const Index = () => {
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <Search className="h-5 w-5 text-primary" />
-                    {payerPlan === PAYER_PLANS.CUSTOM ? `Custom Extraction (${resolvedCustomFields.length})` : `Expected Fields (${fieldsToShow.length})`}
+                    {payerPlan === PAYER_PLANS.CUSTOM
+                      ? `Custom Extraction (${resolvedCustomFields.length})`
+                      : `Expected Fields (${presetFields.length})`}
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="max-h-96 overflow-y-auto space-y-2">
@@ -154,9 +154,13 @@ const Index = () => {
                       <>
                         <div>
                           <Label>Payer Plan Name</Label>
-                          <Input placeholder="Enter custom payer plan name" value={customPlanName} onChange={(e) => setCustomPlanName(e.target.value)} />
+                          <Input
+                            placeholder="Enter custom payer plan name"
+                            value={customPlanName}
+                            onChange={(e) => setCustomPlanName(e.target.value)}
+                          />
                         </div>
-                        <div>
+                        <div className="mt-2">
                           <Label>Fields to extract ({customFields.length})</Label>
                           {customFields.map((field, idx) => (
                             <div key={idx} className="flex items-center gap-2 mt-1">
@@ -179,19 +183,25 @@ const Index = () => {
                         </div>
                       </>
                     ) : (
-                      fieldsToShow.map((field: string, idx: number) => (
+                      presetFields.map((field: string, idx: number) => (
                         <div key={idx} className="flex items-center justify-between gap-2 py-2 border-b last:border-0">
-                          <div className="flex-1">{idx + 1}. {field}</div>
-                          {suggestions[field]?.length > 0 && (
+                          <div className="flex-1">
+                            {idx + 1}. {field}
+                          </div>
+                          {presetSuggestions[field]?.length > 0 && (
                             <Tooltip>
                               <TooltipTrigger asChild>
-                                <button className="text-muted-foreground hover:text-foreground"><Info className="h-4 w-4" /></button>
+                                <button className="text-muted-foreground hover:text-foreground">
+                                  <Info className="h-4 w-4" />
+                                </button>
                               </TooltipTrigger>
                               <TooltipContent>
                                 <div className="text-xs">
                                   <div className="font-medium mb-1">Also look for:</div>
                                   <ul className="list-disc pl-4">
-                                    {suggestions[field].map((s, i) => <li key={i}>{s}</li>)}
+                                    {presetSuggestions[field].map((s, i) => (
+                                      <li key={i}>{s}</li>
+                                    ))}
                                   </ul>
                                 </div>
                               </TooltipContent>
@@ -206,7 +216,9 @@ const Index = () => {
 
               {/* Results table */}
               {extractedData && <ExtractedDataTable mode="single" data={extractedData} fileName={files[0]?.name} payerPlan={payerPlan} />}
-              {comparisonResults && <ExtractedDataTable mode="compare" comparisonData={comparisonResults} fileNames={[files[0]?.name, files[1]?.name]} payerPlan={payerPlan} />}
+              {comparisonResults && (
+                <ExtractedDataTable mode="compare" comparisonData={comparisonResults} fileNames={[files[0]?.name, files[1]?.name]} payerPlan={payerPlan} />
+              )}
             </div>
           </div>
         </div>
