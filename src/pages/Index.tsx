@@ -13,6 +13,36 @@ import { useToast } from "@/hooks/use-toast";
 import { PAYER_PLANS, FIELD_MAPPINGS, FIELD_SUGGESTIONS, type PayerPlan, type ExtractedData, type ComparisonResult } from "@/constants/fields";
 import { extractDataApi, compareDataApi } from "@/services/extractionApi";
 import { cn } from "@/lib/utils";
+import { useState } from "react";
+import { copyToClipboard, downloadJSON } from "@/lib/utils";
+export default function ExtractResult({ extractedData }: { extractedData: object }) {
+  const [data] = useState(extractedData);
+  if (!data) return null;
+  return (
+    <div className="mt-4 p-4 border rounded-lg bg-gray-50">
+      <h2 className="text-lg font-bold mb-2">Extracted Data</h2>
+      <pre className="bg-black text-white p-2 rounded overflow-x-auto text-sm">
+        {JSON.stringify(data, null, 2)}
+      </pre>
+
+      <div className="flex gap-3 mt-3">
+        <button
+          onClick={() => copyToClipboard(data)}
+          className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
+        >
+          Copy
+        </button>
+        <button
+          onClick={() => downloadJSON(data)}
+          className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600"
+        >
+          Download
+        </button>
+      </div>
+    </div>
+  );
+}
+
 const Index = () => {
   const [openAiKey, setOpenAiKey] = useState<string>("");
   const [payerPlan, setPayerPlan] = useState<PayerPlan>(PAYER_PLANS.QLM);
