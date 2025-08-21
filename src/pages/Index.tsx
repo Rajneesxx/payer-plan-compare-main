@@ -111,8 +111,10 @@ const Index = () => {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <Label htmlFor="openai-key">Rapid-Secret Key</Label>
-                  <Input id="openai-key" type="password" value={openAiKey} onChange={(e) => setOpenAiKey(e.target.value)} />
+                  <div>
+                    <Label htmlFor="openai-key">Rapid-Secret Key</Label>
+                    <Input id="openai-key" type="password" value={openAiKey} onChange={(e) => setOpenAiKey(e.target.value)} />
+                  </div>
 
                   <Separator />
 
@@ -137,7 +139,7 @@ const Index = () => {
               </Card>
             </div>
 
-            {/* Right Panel: always visible */}
+            {/* Right Panel */}
             <div className="space-y-6">
               <Card>
                 <CardHeader>
@@ -148,67 +150,113 @@ const Index = () => {
                       : `Expected Fields (${presetFields.length})`}
                   </CardTitle>
                 </CardHeader>
-                <CardContent className="max-h-96 overflow-y-auto space-y-2">
+                <CardContent className="max-h-96 overflow-y-auto space-y-4">
                   <TooltipProvider>
                     {payerPlan === PAYER_PLANS.CUSTOM ? (
-                      <>
+                      <div className="space-y-4">
+                        {/* Custom Payer Plan Name */}
                         <div>
-    <Label>Payer Plan Name</Label>
-    <Input
-      placeholder="Enter custom payer plan name"
-      value={customPlanName}
-      onChange={(e) => setCustomPlanName(e.target.value)}
-    />
-  </div>
-  <div className="mt-2">
-    <Label>Fields to extract ({customFields.length})</Label>
-    {customFields.map((field, idx) => (
-      <div key={idx} className="flex items-center gap-2 mt-1">
-        <Input
-          placeholder={`Field ${idx + 1}`}
-          value={field}
-          onChange={(e) => updateCustomField(idx, e.target.value)}
-          className="flex-1"
-        />
-        {customFields.length > 1 && (
-          <Button variant="ghost" size="sm" onClick={() => removeCustomField(idx)}>
-            <X className="h-4 w-4" />
-          </Button>
-        )}
-      </div>
-    ))}
-    <Button variant="outline" size="sm" onClick={addCustomField} className="mt-2">
-      <Plus className="h-3 w-3 mr-1" /> Add Field
-    </Button>
-  </div>
-                      </>
-                    ) : (
-                      presetFields.map((field: string, idx: number) => (
-                        <div key={idx} className="flex items-center justify-between gap-2 py-2 border-b last:border-0">
-                          <div className="flex-1">
-                            {idx + 1}. {field}
+                          <Label htmlFor="custom-plan-name" className="text-sm font-medium">
+                            Payer Plan Name
+                          </Label>
+                          <Input
+                            id="custom-plan-name"
+                            placeholder="Enter custom payer plan name"
+                            value={customPlanName}
+                            onChange={(e) => setCustomPlanName(e.target.value)}
+                            className="mt-1"
+                          />
+                        </div>
+
+                        <Separator />
+
+                        {/* Custom Fields */}
+                        <div>
+                          <div className="flex items-center justify-between mb-3">
+                            <Label className="text-sm font-medium">
+                              Fields to Extract ({customFields.filter(f => f.trim()).length})
+                            </Label>
+                            <Button 
+                              variant="outline" 
+                              size="sm" 
+                              onClick={addCustomField}
+                              className="h-8"
+                            >
+                              <Plus className="h-3 w-3 mr-1" /> Add Field
+                            </Button>
                           </div>
-                          {presetSuggestions[field]?.length > 0 && (
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <button className="text-muted-foreground hover:text-foreground">
-                                  <Info className="h-4 w-4" />
-                                </button>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <div className="text-xs">
-                                  <div className="font-medium mb-1">Also look for:</div>
-                                  <ul className="list-disc pl-4">
-                                    {presetSuggestions[field].map((s, i) => (
-                                      <li key={i}>{s}</li>
-                                    ))}
-                                  </ul>
+                          
+                          <div className="space-y-2">
+                            {customFields.map((field, idx) => (
+                              <div key={idx} className="flex items-center gap-2">
+                                <div className="text-xs text-muted-foreground w-6 flex-shrink-0">
+                                  {idx + 1}.
                                 </div>
-                              </TooltipContent>
-                            </Tooltip>
+                                <Input
+                                  placeholder={`Field ${idx + 1} (e.g., Patient Name, Insurance ID)`}
+                                  value={field}
+                                  onChange={(e) => updateCustomField(idx, e.target.value)}
+                                  className="flex-1 h-9"
+                                />
+                                {customFields.length > 1 && (
+                                  <Button 
+                                    variant="ghost" 
+                                    size="sm" 
+                                    onClick={() => removeCustomField(idx)}
+                                    className="h-9 w-9 p-0 hover:bg-destructive hover:text-destructive-foreground"
+                                  >
+                                    <X className="h-4 w-4" />
+                                  </Button>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+
+                          {resolvedCustomFields.length > 0 && (
+                            <div className="mt-4 p-3 bg-muted/50 rounded-lg">
+                              <div className="text-xs font-medium text-muted-foreground mb-2">
+                                Fields to be extracted:
+                              </div>
+                              <div className="flex flex-wrap gap-1">
+                                {resolvedCustomFields.map((field, idx) => (
+                                  <span key={idx} className="inline-flex items-center px-2 py-1 rounded-md bg-primary/10 text-primary text-xs">
+                                    {field}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
                           )}
                         </div>
-                      ))
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {presetFields.map((field: string, idx: number) => (
+                          <div key={idx} className="flex items-center justify-between gap-2 py-2 border-b last:border-0">
+                            <div className="flex-1">
+                              {idx + 1}. {field}
+                            </div>
+                            {presetSuggestions[field]?.length > 0 && (
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <button className="text-muted-foreground hover:text-foreground">
+                                    <Info className="h-4 w-4" />
+                                  </button>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <div className="text-xs">
+                                    <div className="font-medium mb-1">Also look for:</div>
+                                    <ul className="list-disc pl-4">
+                                      {presetSuggestions[field].map((s, i) => (
+                                        <li key={i}>{s}</li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                </TooltipContent>
+                              </Tooltip>
+                            )}
+                          </div>
+                        ))}
+                      </div>
                     )}
                   </TooltipProvider>
                 </CardContent>
