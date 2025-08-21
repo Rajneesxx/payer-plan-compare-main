@@ -31,16 +31,9 @@ const Index = () => {
   const [customPlanName, setCustomPlanName] = useState<string>("");
   const [customFields, setCustomFields] = useState<string[]>([""]);
 
-  const resolvedCustomFields = customFields.filter((f) => f.trim() !== "");
-  const { toast } = useToast();
+  const resolvedCustomFields = customFields.filter((field) => field.trim() !== "");
 
-  const addCustomField = () => setCustomFields([...customFields, ""]);
-  const removeCustomField = (index: number) => customFields.length > 1 && setCustomFields(customFields.filter((_, i) => i !== index));
-  const updateCustomField = (index: number, value: string) => {
-    const newFields = [...customFields];
-    newFields[index] = value;
-    setCustomFields(newFields);
-  };
+  const { toast } = useToast();
 
   const exportJson = (data: unknown, filename: string) => {
     try {
@@ -52,31 +45,41 @@ const Index = () => {
       a.click();
       URL.revokeObjectURL(url);
       toast({ title: "Download started", description: `Saved as ${filename}` });
-    } catch {
-      toast({ title: "Download failed", description: "Could not generate JSON.", variant: "destructive" });
+    } catch (err) {
+      console.error(err);
+      toast({ title: "Download failed", description: "Could not generate the JSON file.", variant: "destructive" });
     }
   };
 
   const copyJson = async (data: unknown) => {
     try {
       await navigator.clipboard.writeText(JSON.stringify(data, null, 2));
-      toast({ title: "Copied!", description: "Data copied to clipboard." });
-    } catch {
-      toast({ title: "Copy failed", description: "Could not copy.", variant: "destructive" });
+      toast({ title: "Copied!", description: "Extracted data copied to clipboard." });
+    } catch (err) {
+      console.error(err);
+      toast({ title: "Copy failed", description: "Could not copy to clipboard.", variant: "destructive" });
     }
+  };
+
+  const addCustomField = () => setCustomFields([...customFields, ""]);
+  const removeCustomField = (index: number) => customFields.length > 1 && setCustomFields(customFields.filter((_, i) => i !== index));
+  const updateCustomField = (index: number, value: string) => {
+    const newFields = [...customFields];
+    newFields[index] = value;
+    setCustomFields(newFields);
   };
 
   const handleExtract = async () => {
     if (files.length === 0) {
-      toast({ title: "No files", description: "Please upload PDFs.", variant: "destructive" });
+      toast({ title: "No files selected", description: "Please upload at least one PDF file to extract data.", variant: "destructive" });
       return;
     }
     if (uploadMode === "compare" && files.length < 2) {
-      toast({ title: "Two files required", description: "Upload 2 PDFs to compare.", variant: "destructive" });
+      toast({ title: "Two files required", description: "Please upload two PDF files for comparison.", variant: "destructive" });
       return;
     }
     if (!openAiKey) {
-      toast({ title: "Missing key", description: "Enter Rapid-Secret key.", variant: "destructive" });
+      toast({ title: "Missing Rapid-Secret key", description: "Please enter your Rapid-secret key to proceed.", variant: "destructive" });
       return;
     }
 
@@ -84,6 +87,8 @@ const Index = () => {
     const isCustom = payerPlan === PAYER_PLANS.CUSTOM;
 
     try {
+      toast({ title: "Processing started", description: `Extracting data from ${files.length} file${files.length > 1 ? "s" : ""}...` });
+
       if (uploadMode === "single") {
         const data = await extractDataApi({
           file: files[0],
@@ -94,7 +99,7 @@ const Index = () => {
         });
         setExtractedData(data);
         setComparisonResults(null);
-        toast({ title: "Extraction completed", description: `Extracted data from ${files[0].name}` });
+        toast({ title: "Extraction completed", description: `Successfully extracted data from ${files[0].name}` });
       } else {
         const results = await compareDataApi({
           file1: files[0],
@@ -106,12 +111,13 @@ const Index = () => {
         });
         setComparisonResults(results);
         setExtractedData(null);
-        toast({ title: "Comparison completed", description: `Compared ${files[0].name} & ${files[1].name}` });
+        toast({ title: "Comparison completed", description: `Successfully compared ${files[0].name} and ${files[1].name}` });
       }
     } catch (error) {
+      console.error("Extraction error:", error);
       toast({
         title: "Processing failed",
-        description: error instanceof Error ? error.message : "Error processing PDFs.",
+        description: error instanceof Error ? error.message : "An error occurred while processing the PDF files.",
         variant: "destructive",
       });
     } finally {
@@ -121,38 +127,51 @@ const Index = () => {
 
   const canProcess = files.length > 0 && (uploadMode === "single" || files.length === 2);
   const hasResults = Boolean(extractedData || comparisonResults);
-  const isCustom = payerPlan === PAYER_PLANS.CUSTOM;
 
   return (
     <div className="min-h-screen bg-gradient-surface">
       <div className="container mx-auto px-4 py-12 max-w-6xl">
         <div className="rounded-3xl bg-foreground/5 shadow-lg ring-1 ring-black/5 p-6 backdrop-blur-sm">
+
           {/* Header */}
-          <div className="mb-10 text-center">
-            <h1 className="text-2xl font-semibold tracking-tight">
-              <span className="text-[hsl(var(--brand-gray))]">Rapid</span>
-              <span className="ml-1 text-[hsl(var(--brand-orange))]">Extractor</span>
-            </h1>
-            <p className="text-sm text-muted-foreground">Instantly extract and structure data from PDFs.</p>
+          <div className="mb-10">
+            <div className="mx-auto w-fit rounded-3xl bg-foreground/5 backdrop-blur-sm">
+              <div className="flex flex-col items-center bg-white/80 px-6 py-4 rounded-2xl shadow-md border border-border">
+                <div className="text-center">
+                  <h1 className="text-2xl font-semibold tracking-tight">
+                    <span className="text-[hsl(var(--brand-gray))]">Rapid</span>
+                    <span className="ml-1 text-[hsl(var(--brand-orange))]">Extractor</span>
+                  </h1>
+                  <p className="text-sm text-muted-foreground">
+                    Helps you instantly extract and structure data from complex PDFs.
+                  </p>
+                </div>
+              </div>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Left Panel */}
+            {/* Left Panel: Controls */}
             <div className="space-y-6">
               <Card className="bg-card shadow-md border border-border/70">
                 <CardHeader>
                   <CardTitle className="text-lg flex items-center gap-2">
-                    <Zap className="h-5 w-5 text-primary" /> Configuration / Requirements
+                    <Zap className="h-5 w-5 text-primary" />
+                    Configuration / Requirements
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <Input
-                    type="password"
-                    placeholder="Rapid-Secret Key"
-                    value={openAiKey}
-                    onChange={(e) => setOpenAiKey(e.target.value)}
-                    className="w-full bg-card border-border shadow-sm"
-                  />
+                  <div className="space-y-2">
+                    <Label htmlFor="openai-key" className="text-sm font-medium text-foreground">Rapid-Secret Key</Label>
+                    <Input
+                      id="openai-key"
+                      type="password"
+                      placeholder="Enter your Rapid-Secret key"
+                      value={openAiKey}
+                      onChange={(e) => setOpenAiKey(e.target.value)}
+                      className="w-full bg-card border-border shadow-sm"
+                    />
+                  </div>
 
                   <Separator />
 
@@ -179,19 +198,29 @@ const Index = () => {
                   <Button
                     onClick={handleExtract}
                     disabled={!canProcess || isProcessing}
-                    className="w-full bg-gradient-primary rounded-lg flex items-center justify-center gap-2"
+                    className="w-full bg-gradient-primary hover:shadow-primary transition-all duration-200 rounded-lg"
+                    size="lg"
                   >
-                    {isProcessing ? "Processing..." : uploadMode === "single" ? "Extract Data" : "Compare Files"}
-                    <ArrowRight className="h-4 w-4" />
+                    {isProcessing ? (
+                      <div className="flex items-center gap-2">
+                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        Processing...
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <Zap className="h-4 w-4" />
+                        {uploadMode === "single" ? "Extract Data" : "Compare Files"}
+                        <ArrowRight className="h-4 w-4" />
+                      </div>
+                    )}
                   </Button>
                 </CardContent>
               </Card>
             </div>
 
-            {/* Right Panel */}
+            {/* Right Panel: Field Preview / Custom Fields / Results */}
             <div className="space-y-6">
-              {/* Custom Fields or Preset Fields */}
-              {isCustom ? (
+              {payerPlan === PAYER_PLANS.CUSTOM ? (
                 <Card className="bg-card shadow-md border border-border/70">
                   <CardHeader>
                     <CardTitle className="text-lg flex items-center gap-2">
@@ -266,31 +295,45 @@ const Index = () => {
               )}
 
               {/* Results */}
-              {hasResults ? (
-                <>
-                  {extractedData && (
-                    <div className="space-y-4">
-                      <ExtractedDataTable mode="single" data={extractedData} fileName={files[0]?.name} payerPlan={payerPlan} />
-                      <Button onClick={() => exportJson(extractedData, "extracted.json")} className="bg-gradient-primary">Download JSON</Button>
-                      <Button variant="outline" onClick={() => copyJson(extractedData)}>Copy JSON</Button>
-                    </div>
-                  )}
-                  {comparisonResults && (
-                    <div className="space-y-4">
-                      <ExtractedDataTable mode="compare" comparisonData={comparisonResults} fileNames={[files[0]?.name, files[1]?.name]} payerPlan={payerPlan} />
-                      <Button onClick={() => exportJson(comparisonResults, "comparison.json")} className="bg-gradient-primary">Download JSON</Button>
-                      <Button variant="outline" onClick={() => copyJson(comparisonResults)}>Copy JSON</Button>
-                    </div>
-                  )}
-                </>
-              ) : (
+              {extractedData && (
+                <div className="space-y-4">
+                  <ExtractedDataTable mode="single" data={extractedData} fileName={files[0]?.name} payerPlan={payerPlan} />
+                  <Card className="bg-card shadow-md border border-border/70">
+                    <CardContent className="flex flex-wrap gap-3 p-4">
+                      <Button onClick={() => exportJson(extractedData, `${(files[0]?.name || "document").replace(/\.[^/.]+$/, "")}-extracted.json`)} className="bg-gradient-primary">
+                        Download JSON
+                      </Button>
+                      <Button variant="outline" onClick={() => copyJson(extractedData)}>Copy to Clipboard</Button>
+                    </CardContent>
+                  </Card>
+                </div>
+              )}
+
+              {comparisonResults && (
+                <div className="space-y-4">
+                  <ExtractedDataTable mode="compare" comparisonData={comparisonResults} fileNames={[files[0]?.name, files[1]?.name]} payerPlan={payerPlan} />
+                  <Card className="bg-card shadow-md border border-border/70">
+                    <CardContent className="flex flex-wrap gap-3 p-4">
+                      <Button onClick={() => exportJson(comparisonResults, `comparison-${(files[0]?.name || "file1").replace(/\.[^/.]+$/, "")}-${(files[1]?.name || "file2").replace(/\.[^/.]+$/, "")}.json`)} className="bg-gradient-primary">
+                        Download JSON
+                      </Button>
+                      <Button variant="outline" onClick={() => copyJson(comparisonResults)}>Copy to Clipboard</Button>
+                    </CardContent>
+                  </Card>
+                </div>
+              )}
+
+              {/* Empty state */}
+              {!hasResults && (
                 <Card className="bg-card/60 shadow-md border-dashed border-2 border-border/80">
                   <CardContent className="py-16 text-center">
                     <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mx-auto mb-4">
                       <FileText className="h-8 w-8 text-muted-foreground" />
                     </div>
                     <h3 className="text-lg font-medium text-foreground mb-2">No data extracted yet</h3>
-                    <p className="text-muted-foreground">Upload PDFs and click "Extract Data" or "Compare Files" to see results.</p>
+                    <p className="text-muted-foreground">
+                      Upload PDF files and click "Extract Data" or "Compare Files" to see results here.
+                    </p>
                   </CardContent>
                 </Card>
               )}
@@ -303,3 +346,4 @@ const Index = () => {
 };
 
 export default Index;
+
