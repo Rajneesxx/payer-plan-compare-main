@@ -1,3 +1,4 @@
+// Index.tsx
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -33,7 +34,6 @@ const Index = () => {
 
   const { toast } = useToast();
 
-  // Always send only non-empty fields to API
   const resolvedCustomFields = customFields.filter((f) => f.trim() !== "");
 
   const addCustomField = () => setCustomFields([...customFields, ""]);
@@ -100,14 +100,14 @@ const Index = () => {
   const canProcess = files.length > 0 && (uploadMode === "single" || files.length === 2);
   const hasResults = Boolean(extractedData || comparisonResults);
 
-  // Merged panel always renders all customFields to prevent blank inputs
-  const fieldList = payerPlan === PAYER_PLANS.CUSTOM ? customFields : FIELD_MAPPINGS[payerPlan];
+  // Safe defaults
+  const safeFields = payerPlan === PAYER_PLANS.CUSTOM ? customFields : FIELD_MAPPINGS[payerPlan] || [];
+  const safeSuggestions = FIELD_SUGGESTIONS[payerPlan] || {};
 
   return (
     <div className="min-h-screen bg-gradient-surface">
       <div className="container mx-auto px-4 py-12 max-w-6xl">
         <div className="rounded-3xl bg-foreground/5 shadow-lg ring-1 ring-black/5 p-6 backdrop-blur-sm">
-          {/* Header */}
           <div className="mb-10 text-center">
             <h1 className="text-2xl font-semibold">
               <span className="text-[hsl(var(--brand-gray))]">Rapid</span>
@@ -117,25 +117,22 @@ const Index = () => {
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Left Panel */}
             <div className="space-y-6">
-              <Card className="bg-card shadow-md border border-border/70">
+              <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <Zap className="h-5 w-5 text-primary" /> Configuration / Requirements
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="openai-key">Rapid-Secret Key</Label>
-                    <Input
-                      id="openai-key"
-                      type="password"
-                      placeholder="Enter your key"
-                      value={openAiKey}
-                      onChange={(e) => setOpenAiKey(e.target.value)}
-                    />
-                  </div>
+                  <Label htmlFor="openai-key">Rapid-Secret Key</Label>
+                  <Input
+                    id="openai-key"
+                    type="password"
+                    placeholder="Enter your key"
+                    value={openAiKey}
+                    onChange={(e) => setOpenAiKey(e.target.value)}
+                  />
 
                   <Separator />
 
@@ -151,13 +148,7 @@ const Index = () => {
 
                   <Separator />
 
-                  <PDFUploader
-                    mode={uploadMode}
-                    onModeChange={setUploadMode}
-                    files={files}
-                    onFilesChange={setFiles}
-                    isLoading={isProcessing}
-                  />
+                  <PDFUploader mode={uploadMode} onModeChange={setUploadMode} files={files} onFilesChange={setFiles} isLoading={isProcessing} />
 
                   <Button onClick={handleExtract} disabled={!canProcess || isProcessing} className="w-full mt-2">
                     {isProcessing ? "Processing..." : uploadMode === "single" ? "Extract Data" : "Compare Files"}
@@ -166,47 +157,39 @@ const Index = () => {
               </Card>
             </div>
 
-            {/* Right Panel */}
             <div className="space-y-6">
-              <Card className="bg-card shadow-md border border-border/70">
+              <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <Search className="h-5 w-5 text-primary" />
-                    {payerPlan === PAYER_PLANS.CUSTOM
-                      ? `Custom Fields (${customFields.length})`
-                      : `Expected Fields (${FIELD_MAPPINGS[payerPlan].length})`}
+                    {payerPlan === PAYER_PLANS.CUSTOM ? `Custom Fields (${customFields.length})` : `Expected Fields (${safeFields.length})`}
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="max-h-96 overflow-y-auto space-y-2">
                   <TooltipProvider>
-                    {fieldList.map((field, index) => (
-                      <div key={index} className="flex items-center justify-between py-2 border-b border-border/50 last:border-0 gap-2">
-                        <div className="flex-1">
-                          {payerPlan === PAYER_PLANS.CUSTOM ? (
-                            <Input
-                              placeholder={`Field ${index + 1}`}
-                              value={field}
-                              onChange={(e) => updateCustomField(index, e.target.value)}
-                            />
-                          ) : (
-                            <div className="text-sm font-medium text-foreground">{index + 1}. {field}</div>
-                          )}
-                        </div>
+                    {safeFields.map((field, idx) => (
+                      <div key={idx} className="flex items-center justify-between gap-2 py-2 border-b last:border-0">
+                        {payerPlan === PAYER_PLANS.CUSTOM ? (
+                          <Input
+                            placeholder={`Field ${idx + 1}`}
+                            value={field}
+                            onChange={(e) => updateCustomField(idx, e.target.value)}
+                            className="flex-1"
+                          />
+                        ) : (
+                          <div className="flex-1">{idx + 1}. {field}</div>
+                        )}
 
-                        {FIELD_SUGGESTIONS[payerPlan]?.[field]?.length > 0 && (
+                        {safeSuggestions[field]?.length > 0 && (
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              <button className="text-muted-foreground hover:text-foreground">
-                                <Info className="h-4 w-4" />
-                              </button>
+                              <button className="text-muted-foreground hover:text-foreground"><Info className="h-4 w-4" /></button>
                             </TooltipTrigger>
                             <TooltipContent>
                               <div className="text-xs">
-                                <div className="font-medium text-foreground mb-1">Also look for:</div>
-                                <ul className="list-disc pl-4 space-y-0.5">
-                                  {FIELD_SUGGESTIONS[payerPlan][field].map((s, idx) => (
-                                    <li key={idx} className="text-muted-foreground">{s}</li>
-                                  ))}
+                                <div className="font-medium mb-1">Also look for:</div>
+                                <ul className="list-disc pl-4">
+                                  {safeSuggestions[field].map((s, i) => <li key={i}>{s}</li>)}
                                 </ul>
                               </div>
                             </TooltipContent>
@@ -214,7 +197,7 @@ const Index = () => {
                         )}
 
                         {payerPlan === PAYER_PLANS.CUSTOM && customFields.length > 1 && (
-                          <Button variant="ghost" size="sm" onClick={() => removeCustomField(index)}>
+                          <Button variant="ghost" size="sm" onClick={() => removeCustomField(idx)}>
                             <X className="h-4 w-4" />
                           </Button>
                         )}
@@ -230,28 +213,8 @@ const Index = () => {
                 </CardContent>
               </Card>
 
-              {hasResults ? (
-                extractedData ? (
-                  <ExtractedDataTable mode="single" data={extractedData} fileName={files[0]?.name} payerPlan={payerPlan} />
-                ) : (
-                  <ExtractedDataTable
-                    mode="compare"
-                    comparisonData={comparisonResults!}
-                    fileNames={[files[0]?.name, files[1]?.name]}
-                    payerPlan={payerPlan}
-                  />
-                )
-              ) : (
-                <Card className="bg-card/60 shadow-md border-dashed border-2 border-border/80">
-                  <CardContent className="py-16 text-center">
-                    <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mx-auto mb-4">
-                      <FileText className="h-8 w-8 text-muted-foreground" />
-                    </div>
-                    <h3 className="text-lg font-medium text-foreground mb-2">No data extracted yet</h3>
-                    <p className="text-muted-foreground">Upload PDFs and click "Extract Data" or "Compare Files" to see results here.</p>
-                  </CardContent>
-                </Card>
-              )}
+              {hasResults && extractedData && <ExtractedDataTable mode="single" data={extractedData} fileName={files[0]?.name} payerPlan={payerPlan} />}
+              {hasResults && comparisonResults && <ExtractedDataTable mode="compare" comparisonData={comparisonResults} fileNames={[files[0]?.name, files[1]?.name]} payerPlan={payerPlan} />}
             </div>
           </div>
         </div>
