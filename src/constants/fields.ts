@@ -1,6 +1,7 @@
 export const PAYER_PLANS = {
   QLM: 'QLM',
-  ALKOOT: 'ALKOOT'
+  ALKOOT: 'ALKOOT',
+  CUSTOM: 'CUSTOM'
 } as const;
 
 export type PayerPlan = keyof typeof PAYER_PLANS;
