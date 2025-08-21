@@ -1,19 +1,24 @@
-import { type PayerPlan } from "@/constants/fields";
+import React from "react";
 
-interface PayerPlanSelectorProps {
-  value: PayerPlan;
-  onValueChange: (value: PayerPlan) => void;
-  options: { value: PayerPlan; label: string }[];
-}
+type Option = {
+  value: string;
+  label: string;
+};
 
-export const PayerPlanSelector = ({ value, onValueChange, options }: PayerPlanSelectorProps) => {
+type Props = {
+  value: string;
+  onValueChange: (value: string) => void;
+  options: Option[];
+};
+
+export const PayerPlanSelector: React.FC<Props> = ({ value, onValueChange, options }) => {
   return (
     <div className="space-y-2">
       <label className="text-sm font-medium text-foreground">Payer Plan</label>
       <select
+        className="w-full border border-border bg-card rounded-md p-2 shadow-sm"
         value={value}
-        onChange={(e) => onValueChange(e.target.value as PayerPlan)}
-        className="w-full border border-border rounded-md p-2 bg-card"
+        onChange={(e) => onValueChange(e.target.value)}
       >
         {options.map((opt) => (
           <option key={opt.value} value={opt.value}>
