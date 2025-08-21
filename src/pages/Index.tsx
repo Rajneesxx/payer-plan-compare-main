@@ -153,34 +153,34 @@ const Index = () => {
                     {payerPlan === PAYER_PLANS.CUSTOM ? (
                       <>
                         <div>
-                          <Label>Payer Plan Name</Label>
-                          <Input
-                            placeholder="Enter custom payer plan name"
-                            value={customPlanName}
-                            onChange={(e) => setCustomPlanName(e.target.value)}
-                          />
-                        </div>
-                        <div className="mt-2">
-                          <Label>Fields to extract ({customFields.length})</Label>
-                          {customFields.map((field, idx) => (
-                            <div key={idx} className="flex items-center gap-2 mt-1">
-                              <Input
-                                placeholder={`Field ${idx + 1}`}
-                                value={field}
-                                onChange={(e) => updateCustomField(idx, e.target.value)}
-                                className="flex-1"
-                              />
-                              {customFields.length > 1 && (
-                                <Button variant="ghost" size="sm" onClick={() => removeCustomField(idx)}>
-                                  <X className="h-4 w-4" />
-                                </Button>
-                              )}
-                            </div>
-                          ))}
-                          <Button variant="outline" size="sm" onClick={addCustomField} className="mt-2">
-                            <Plus className="h-3 w-3 mr-1" /> Add Field
-                          </Button>
-                        </div>
+    <Label>Payer Plan Name</Label>
+    <Input
+      placeholder="Enter custom payer plan name"
+      value={customPlanName}
+      onChange={(e) => setCustomPlanName(e.target.value)}
+    />
+  </div>
+  <div className="mt-2">
+    <Label>Fields to extract ({customFields.length})</Label>
+    {customFields.map((field, idx) => (
+      <div key={idx} className="flex items-center gap-2 mt-1">
+        <Input
+          placeholder={`Field ${idx + 1}`}
+          value={field}
+          onChange={(e) => updateCustomField(idx, e.target.value)}
+          className="flex-1"
+        />
+        {customFields.length > 1 && (
+          <Button variant="ghost" size="sm" onClick={() => removeCustomField(idx)}>
+            <X className="h-4 w-4" />
+          </Button>
+        )}
+      </div>
+    ))}
+    <Button variant="outline" size="sm" onClick={addCustomField} className="mt-2">
+      <Plus className="h-3 w-3 mr-1" /> Add Field
+    </Button>
+  </div>
                       </>
                     ) : (
                       presetFields.map((field: string, idx: number) => (
