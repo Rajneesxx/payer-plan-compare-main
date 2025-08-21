@@ -31,13 +31,11 @@ const Index = () => {
   const [customPlanName, setCustomPlanName] = useState<string>("");
   const [customFields, setCustomFields] = useState<string[]>([""]);
 
-  const resolvedCustomFields = customFields.filter((field) => field.trim() !== "");
+  const resolvedCustomFields = customFields.filter((f) => f.trim() !== "");
   const { toast } = useToast();
 
   const addCustomField = () => setCustomFields([...customFields, ""]);
-  const removeCustomField = (index: number) => {
-    if (customFields.length > 1) setCustomFields(customFields.filter((_, i) => i !== index));
-  };
+  const removeCustomField = (index: number) => customFields.length > 1 && setCustomFields(customFields.filter((_, i) => i !== index));
   const updateCustomField = (index: number, value: string) => {
     const newFields = [...customFields];
     newFields[index] = value;
@@ -55,30 +53,30 @@ const Index = () => {
       URL.revokeObjectURL(url);
       toast({ title: "Download started", description: `Saved as ${filename}` });
     } catch {
-      toast({ title: "Download failed", description: "Could not generate the JSON file.", variant: "destructive" });
+      toast({ title: "Download failed", description: "Could not generate JSON.", variant: "destructive" });
     }
   };
 
   const copyJson = async (data: unknown) => {
     try {
       await navigator.clipboard.writeText(JSON.stringify(data, null, 2));
-      toast({ title: "Copied!", description: "Extracted data copied to clipboard." });
+      toast({ title: "Copied!", description: "Data copied to clipboard." });
     } catch {
-      toast({ title: "Copy failed", description: "Could not copy to clipboard.", variant: "destructive" });
+      toast({ title: "Copy failed", description: "Could not copy.", variant: "destructive" });
     }
   };
 
   const handleExtract = async () => {
     if (files.length === 0) {
-      toast({ title: "No files selected", description: "Please upload at least one PDF file.", variant: "destructive" });
+      toast({ title: "No files", description: "Please upload PDFs.", variant: "destructive" });
       return;
     }
     if (uploadMode === "compare" && files.length < 2) {
-      toast({ title: "Two files required", description: "Please upload two PDF files for comparison.", variant: "destructive" });
+      toast({ title: "Two files required", description: "Upload 2 PDFs to compare.", variant: "destructive" });
       return;
     }
     if (!openAiKey) {
-      toast({ title: "Missing Rapid-Secret key", description: "Enter your Rapid-secret key to proceed.", variant: "destructive" });
+      toast({ title: "Missing key", description: "Enter Rapid-Secret key.", variant: "destructive" });
       return;
     }
 
@@ -96,7 +94,7 @@ const Index = () => {
         });
         setExtractedData(data);
         setComparisonResults(null);
-        toast({ title: "Extraction completed", description: `Successfully extracted data from ${files[0].name}` });
+        toast({ title: "Extraction completed", description: `Extracted data from ${files[0].name}` });
       } else {
         const results = await compareDataApi({
           file1: files[0],
@@ -108,7 +106,7 @@ const Index = () => {
         });
         setComparisonResults(results);
         setExtractedData(null);
-        toast({ title: "Comparison completed", description: `Successfully compared ${files[0].name} and ${files[1].name}` });
+        toast({ title: "Comparison completed", description: `Compared ${files[0].name} & ${files[1].name}` });
       }
     } catch (error) {
       toast({
@@ -178,8 +176,13 @@ const Index = () => {
                     isLoading={isProcessing}
                   />
 
-                  <Button onClick={handleExtract} disabled={!canProcess || isProcessing} className="w-full bg-gradient-primary rounded-lg">
+                  <Button
+                    onClick={handleExtract}
+                    disabled={!canProcess || isProcessing}
+                    className="w-full bg-gradient-primary rounded-lg flex items-center justify-center gap-2"
+                  >
                     {isProcessing ? "Processing..." : uploadMode === "single" ? "Extract Data" : "Compare Files"}
+                    <ArrowRight className="h-4 w-4" />
                   </Button>
                 </CardContent>
               </Card>
@@ -187,7 +190,7 @@ const Index = () => {
 
             {/* Right Panel */}
             <div className="space-y-6">
-              {/* Field Preview or Custom Fields */}
+              {/* Custom Fields or Preset Fields */}
               {isCustom ? (
                 <Card className="bg-card shadow-md border border-border/70">
                   <CardHeader>
@@ -202,11 +205,11 @@ const Index = () => {
                       onChange={(e) => setCustomPlanName(e.target.value)}
                       className="w-full bg-card border-border shadow-sm"
                     />
-                    {customFields.map((field, idx) => (
+                    {customFields.map((f, idx) => (
                       <div key={idx} className="flex gap-2 items-center">
                         <Input
                           placeholder={`Field ${idx + 1}`}
-                          value={field}
+                          value={f}
                           onChange={(e) => updateCustomField(idx, e.target.value)}
                           className="flex-1 bg-card border-border shadow-sm"
                         />
@@ -232,10 +235,10 @@ const Index = () => {
                   <CardContent>
                     <TooltipProvider>
                       <div className="space-y-2 max-h-64 overflow-y-auto">
-                        {FIELD_MAPPINGS[payerPlan].map((field, idx) => (
-                          <div key={field} className="flex items-center justify-between py-2 border-b border-border/50 last:border-0">
-                            <div className="text-sm font-medium text-foreground">{idx + 1}. {field}</div>
-                            {FIELD_SUGGESTIONS[payerPlan]?.[field]?.length > 0 && (
+                        {FIELD_MAPPINGS[payerPlan].map((f, idx) => (
+                          <div key={f} className="flex items-center justify-between py-2 border-b border-border/50 last:border-0">
+                            <div className="text-sm font-medium text-foreground">{idx + 1}. {f}</div>
+                            {FIELD_SUGGESTIONS[payerPlan]?.[f]?.length > 0 && (
                               <Tooltip>
                                 <TooltipTrigger asChild>
                                   <button className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors">
@@ -246,7 +249,7 @@ const Index = () => {
                                   <div className="text-xs">
                                     <div className="mb-1 font-medium text-foreground">Also look for</div>
                                     <ul className="list-disc pl-4 space-y-0.5">
-                                      {FIELD_SUGGESTIONS[payerPlan][field].map((s, i) => (
+                                      {FIELD_SUGGESTIONS[payerPlan][f].map((s, i) => (
                                         <li key={i} className="text-muted-foreground">{s}</li>
                                       ))}
                                     </ul>
@@ -287,9 +290,7 @@ const Index = () => {
                       <FileText className="h-8 w-8 text-muted-foreground" />
                     </div>
                     <h3 className="text-lg font-medium text-foreground mb-2">No data extracted yet</h3>
-                    <p className="text-muted-foreground">
-                      Upload PDF files and click "Extract Data" or "Compare Files" to see results here.
-                    </p>
+                    <p className="text-muted-foreground">Upload PDFs and click "Extract Data" or "Compare Files" to see results.</p>
                   </CardContent>
                 </Card>
               )}
