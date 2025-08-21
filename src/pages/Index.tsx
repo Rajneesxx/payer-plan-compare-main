@@ -157,62 +157,79 @@ const Index = () => {
               </Card>
             </div>
 
+            {/* Right-hand panel for preset + custom fields */}
             <div className="space-y-6">
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <Search className="h-5 w-5 text-primary" />
-                    {payerPlan === PAYER_PLANS.CUSTOM ? `Custom Fields (${customFields.length})` : `Expected Fields (${safeFields.length})`}
+                    {payerPlan === PAYER_PLANS.CUSTOM
+                      ? `Custom Extraction (${customFields.length})`
+                      : `Expected Fields (${safeFields.length})`}
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="max-h-96 overflow-y-auto space-y-2">
                   <TooltipProvider>
-                    {safeFields.map((field, idx) => (
-                      <div key={idx} className="flex items-center justify-between gap-2 py-2 border-b last:border-0">
-                        {payerPlan === PAYER_PLANS.CUSTOM ? (
-                          <Input
-                            placeholder={`Field ${idx + 1}`}
-                            value={field}
-                            onChange={(e) => updateCustomField(idx, e.target.value)}
-                            className="flex-1"
-                          />
-                        ) : (
-                          <div className="flex-1">{idx + 1}. {field}</div>
-                        )}
-
-                        {safeSuggestions[field]?.length > 0 && (
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <button className="text-muted-foreground hover:text-foreground"><Info className="h-4 w-4" /></button>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              <div className="text-xs">
-                                <div className="font-medium mb-1">Also look for:</div>
-                                <ul className="list-disc pl-4">
-                                  {safeSuggestions[field].map((s, i) => <li key={i}>{s}</li>)}
-                                </ul>
-                              </div>
-                            </TooltipContent>
-                          </Tooltip>
-                        )}
-
-                        {payerPlan === PAYER_PLANS.CUSTOM && customFields.length > 1 && (
-                          <Button variant="ghost" size="sm" onClick={() => removeCustomField(idx)}>
-                            <X className="h-4 w-4" />
-                          </Button>
-                        )}
-                      </div>
-                    ))}
-
                     {payerPlan === PAYER_PLANS.CUSTOM && (
-                      <Button variant="outline" size="sm" onClick={addCustomField} className="mt-2">
-                        <Plus className="h-3 w-3 mr-1" /> Add Field
-                      </Button>
+                      <div className="space-y-3">
+                        <div>
+                          <Label>Payer Plan Name</Label>
+                          <Input
+                            placeholder="Enter custom payer plan name"
+                            value={customPlanName}
+                            onChange={(e) => setCustomPlanName(e.target.value)}
+                          />
+                        </div>
+                        <div>
+                          <Label>Fields to extract ({customFields.length})</Label>
+                          {customFields.map((field, idx) => (
+                            <div key={idx} className="flex items-center gap-2 mt-1">
+                              <Input
+                                placeholder={`Field ${idx + 1}`}
+                                value={field}
+                                onChange={(e) => updateCustomField(idx, e.target.value)}
+                                className="flex-1"
+                              />
+                              {customFields.length > 1 && (
+                                <Button variant="ghost" size="sm" onClick={() => removeCustomField(idx)}>
+                                  <X className="h-4 w-4" />
+                                </Button>
+                              )}
+                            </div>
+                          ))}
+                          <Button variant="outline" size="sm" onClick={addCustomField} className="mt-2">
+                            <Plus className="h-3 w-3 mr-1" /> Add Field
+                          </Button>
+                        </div>
+                      </div>
                     )}
+
+                    {payerPlan !== PAYER_PLANS.CUSTOM &&
+                      safeFields.map((field, idx) => (
+                        <div key={idx} className="flex items-center justify-between gap-2 py-2 border-b last:border-0">
+                          <div className="flex-1">{idx + 1}. {field}</div>
+                          {safeSuggestions[field]?.length > 0 && (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <button className="text-muted-foreground hover:text-foreground"><Info className="h-4 w-4" /></button>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <div className="text-xs">
+                                  <div className="font-medium mb-1">Also look for:</div>
+                                  <ul className="list-disc pl-4">
+                                    {safeSuggestions[field].map((s, i) => <li key={i}>{s}</li>)}
+                                  </ul>
+                                </div>
+                              </TooltipContent>
+                            </Tooltip>
+                          )}
+                        </div>
+                      ))}
                   </TooltipProvider>
                 </CardContent>
               </Card>
 
+              {/* Results table */}
               {hasResults && extractedData && <ExtractedDataTable mode="single" data={extractedData} fileName={files[0]?.name} payerPlan={payerPlan} />}
               {hasResults && comparisonResults && <ExtractedDataTable mode="compare" comparisonData={comparisonResults} fileNames={[files[0]?.name, files[1]?.name]} payerPlan={payerPlan} />}
             </div>
