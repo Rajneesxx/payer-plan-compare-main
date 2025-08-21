@@ -1,3 +1,4 @@
+
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -127,8 +128,6 @@ const Index = () => {
                     ]}
                   />
 
-                  <Separator />
-
                   {payerPlan === PAYER_PLANS.CUSTOM && (
                     <div className="space-y-4">
                       <div>
@@ -142,6 +141,8 @@ const Index = () => {
                       </div>
                     </div>
                   )}
+
+                  <Separator />
 
                   <PDFUploader mode={uploadMode} onModeChange={setUploadMode} files={files} onFilesChange={setFiles} isLoading={isProcessing} />
 
@@ -172,16 +173,16 @@ const Index = () => {
                             <Label className="text-sm font-medium">
                               Fields to Extract ({customFields.filter(f => f.trim()).length})
                             </Label>
-                            <Button 
-                              variant="outline" 
-                              size="sm" 
+                            <Button
+                              variant="outline"
+                              size="sm"
                               onClick={addCustomField}
                               className="h-8"
                             >
                               <Plus className="h-3 w-3 mr-1" /> Add Field
                             </Button>
                           </div>
-                          
+
                           <div className="space-y-2">
                             {customFields.map((field, idx) => (
                               <div key={idx} className="flex items-center gap-2">
@@ -195,9 +196,9 @@ const Index = () => {
                                   className="flex-1 h-9"
                                 />
                                 {customFields.length > 1 && (
-                                  <Button 
-                                    variant="ghost" 
-                                    size="sm" 
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
                                     onClick={() => removeCustomField(idx)}
                                     className="h-9 w-9 p-0 hover:bg-destructive hover:text-destructive-foreground"
                                   >
