@@ -1,4 +1,3 @@
-// Index.tsx
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -130,6 +129,20 @@ const Index = () => {
 
                   <Separator />
 
+                  {payerPlan === PAYER_PLANS.CUSTOM && (
+                    <div className="space-y-4">
+                      <div>
+                        <Label htmlFor="custom-plan-name">Payer Plan Name</Label>
+                        <Input
+                          id="custom-plan-name"
+                          placeholder="Enter custom payer plan name"
+                          value={customPlanName}
+                          onChange={(e) => setCustomPlanName(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                  )}
+
                   <PDFUploader mode={uploadMode} onModeChange={setUploadMode} files={files} onFilesChange={setFiles} isLoading={isProcessing} />
 
                   <Button onClick={handleExtract} disabled={!canProcess || isProcessing} className="w-full mt-2">
@@ -154,23 +167,6 @@ const Index = () => {
                   <TooltipProvider>
                     {payerPlan === PAYER_PLANS.CUSTOM ? (
                       <div className="space-y-4">
-                        {/* Custom Payer Plan Name */}
-                        <div>
-                          <Label htmlFor="custom-plan-name" className="text-sm font-medium">
-                            Payer Plan Name
-                          </Label>
-                          <Input
-                            id="custom-plan-name"
-                            placeholder="Enter custom payer plan name"
-                            value={customPlanName}
-                            onChange={(e) => setCustomPlanName(e.target.value)}
-                            className="mt-1"
-                          />
-                        </div>
-
-                        <Separator />
-
-                        {/* Custom Fields */}
                         <div>
                           <div className="flex items-center justify-between mb-3">
                             <Label className="text-sm font-medium">
