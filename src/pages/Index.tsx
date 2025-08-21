@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { FileText, Zap, ArrowRight, Info, Plus, X } from "lucide-react";
+import { FileText, Zap, ArrowRight, Info, Plus, X, Search } from "lucide-react";
 import { PayerPlanSelector } from "@/components/PayerPlanSelector";
 import { PDFUploader } from "@/components/PDFUploader";
 import { ExtractedDataTable } from "@/components/ExtractedDataTable";
@@ -31,36 +31,10 @@ const Index = () => {
   const [customFields, setCustomFields] = useState<string[]>([""]);
 
   const resolvedCustomFields = customFields.filter((f) => f.trim() !== "");
-
   const { toast } = useToast();
 
-  // ========== Helpers ==========
   const canProcess = files.length > 0 && (uploadMode === "single" || files.length === 2);
   const hasResults = Boolean(extractedData || comparisonResults);
-
-  const exportJson = (data: unknown, filename: string) => {
-    try {
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      a.click();
-      URL.revokeObjectURL(url);
-      toast({ title: "Download started", description: `Saved as ${filename}` });
-    } catch (err) {
-      toast({ title: "Download failed", description: "Could not generate the JSON file.", variant: "destructive" });
-    }
-  };
-
-  const copyJson = async (data: unknown) => {
-    try {
-      await navigator.clipboard.writeText(JSON.stringify(data, null, 2));
-      toast({ title: "Copied!", description: "Extracted data copied to clipboard." });
-    } catch {
-      toast({ title: "Copy failed", description: "Could not copy to clipboard.", variant: "destructive" });
-    }
-  };
 
   // ========== Custom Fields Handlers ==========
   const addCustomField = () => setCustomFields([...customFields, ""]);
@@ -123,7 +97,7 @@ const Index = () => {
               <span className="text-[hsl(var(--brand-gray))]">Rapid</span>
               <span className="ml-1 text-[hsl(var(--brand-orange))]">Extractor</span>
             </h1>
-            <p className="text-sm text-muted-foreground">Helps you instantly extract and structure data from complex PDFs.</p>
+            <p className="text-sm text-muted-foreground">Extract and structure data from PDFs instantly.</p>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -176,40 +150,65 @@ const Index = () => {
               </Card>
             </div>
 
-            {/* Right Panel */}
+            {/* Right Panel: Unified Field Preview */}
             <div className="space-y-6">
-              {/* Custom Fields Panel */}
-              {payerPlan === PAYER_PLANS.CUSTOM && (
-                <Card className="bg-card shadow-md border border-border/70">
-                  <CardHeader>
-                    <CardTitle>Custom Extraction Fields</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <Input
-                      placeholder="Custom Plan Name"
-                      value={customPlanName}
-                      onChange={(e) => setCustomPlanName(e.target.value)}
-                      className="mb-2 w-full"
-                    />
-                    {customFields.map((field, idx) => (
-                      <div key={idx} className="flex items-center gap-2 mb-2">
-                        <Input
-                          placeholder={`Field ${idx + 1}`}
-                          value={field}
-                          onChange={(e) => updateCustomField(idx, e.target.value)}
-                          className="flex-1"
-                        />
-                        <Button variant="ghost" size="sm" onClick={() => removeCustomField(idx)}>
-                          <X className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    ))}
-                    <Button variant="outline" size="sm" onClick={addCustomField}>
+              <Card className="bg-card shadow-md border border-border/70">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Search className="h-5 w-5 text-primary" />
+                    {payerPlan === PAYER_PLANS.CUSTOM
+                      ? `Custom Fields (${resolvedCustomFields.length})`
+                      : `Expected Fields (${FIELD_MAPPINGS[payerPlan].length})`}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="max-h-96 overflow-y-auto">
+                  {(payerPlan === PAYER_PLANS.CUSTOM ? resolvedCustomFields : FIELD_MAPPINGS[payerPlan]).map(
+                    (field, index) => {
+                      const suggestions = FIELD_SUGGESTIONS[payerPlan]?.[field] || [];
+                      return (
+                        <div key={field + index} className="flex items-center justify-between py-2 border-b border-border/50 last:border-0">
+                          <div className="flex-1 space-y-1">
+                            <div className="text-sm font-medium text-foreground">
+                              {index + 1}. {field}
+                            </div>
+
+                            {/* For Custom Plan: show input field */}
+                            {payerPlan === PAYER_PLANS.CUSTOM && (
+                              <Input
+                                placeholder={`Field ${index + 1}`}
+                                value={field}
+                                onChange={(e) => updateCustomField(index, e.target.value)}
+                                className="mt-1"
+                              />
+                            )}
+                          </div>
+
+                          {/* Tooltip for suggestions */}
+                          {suggestions.length > 0 && (
+                            <div className="ml-2 text-muted-foreground">
+                              <Info className="h-4 w-4" title={`Also look for: ${suggestions.join(", ")}`} />
+                            </div>
+                          )}
+
+                          {/* Remove button for custom */}
+                          {payerPlan === PAYER_PLANS.CUSTOM && customFields.length > 1 && (
+                            <Button variant="ghost" size="sm" onClick={() => removeCustomField(index)}>
+                              <X className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </div>
+                      );
+                    }
+                  )}
+
+                  {/* Add Field button for Custom */}
+                  {payerPlan === PAYER_PLANS.CUSTOM && (
+                    <Button variant="outline" size="sm" onClick={addCustomField} className="mt-2">
                       <Plus className="h-3 w-3 mr-1" /> Add Field
                     </Button>
-                  </CardContent>
-                </Card>
-              )}
+                  )}
+                </CardContent>
+              </Card>
 
               {/* Extracted Data / Comparison */}
               {hasResults ? (
