@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { FileText, Zap, ArrowRight, Info, Search, Plus, X } from "lucide-react";
+import { FileText, Zap, ArrowRight, Info, Search, Plus, X, Download, Copy } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { PayerPlanSelector } from "@/components/PayerPlanSelector";
 import { PDFUploader } from "@/components/PDFUploader";
@@ -88,10 +88,54 @@ const Index = () => {
   const presetFields = FIELD_MAPPINGS[payerPlan] || [];
   const presetSuggestions = FIELD_SUGGESTIONS[payerPlan] || [];
 
-  console.log("Current payerPlan:", payerPlan, "PAYER_PLANS.CUSTOM:", PAYER_PLANS.CUSTOM); // Enhanced debug log
+  const downloadData = () => {
+    let dataToExport: any[] = [];
+    if (extractedData) {
+      dataToExport = Object.entries(extractedData).map(([key, value]) => ({ Field: key, Value: value }));
+    } else if (comparisonResults) {
+      dataToExport = comparisonResults.map((result, index) => ({
+        Comparison: `File ${index + 1}`,
+        ...result,
+      }));
+    }
+
+    if (dataToExport.length === 0) return;
+
+    const csv = [
+      Object.keys(dataToExport[0]).join(","),
+      ...dataToExport.map((row) => Object.values(row).join(",")),
+    ].join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `extracted_data_${new Date().toISOString().split("T")[0]}.csv`;
+    a.click();
+    window.URL.revokeObjectURL(url);
+  };
+
+  const copyToClipboard = () => {
+    let textToCopy = "";
+    if (extractedData) {
+      textToCopy = Object.entries(extractedData)
+        .map(([key, value]) => `${key}: ${value}`)
+        .join("\n");
+    } else if (comparisonResults) {
+      textToCopy = comparisonResults
+        .map((result, index) => `File ${index + 1}:\n${Object.entries(result).map(([k, v]) => `${k}: ${v}`).join("\n")}`)
+        .join("\n\n");
+    }
+
+    if (textToCopy) {
+      navigator.clipboard.writeText(textToCopy).then(
+        () => toast({ title: "Copied to clipboard", variant: "default" }),
+        () => toast({ title: "Failed to copy", variant: "destructive" })
+      );
+    }
+  };
 
   return (
-    <div className="min-h-screen bg-gradient-surface" key={payerPlan}> {/* Force re-render on payerPlan change */}
+    <div className="min-h-screen bg-gradient-surface" key={payerPlan}>
       <div className="container mx-auto px-4 py-12 max-w-6xl">
         <div className="rounded-3xl bg-foreground/5 shadow-lg ring-1 ring-black/5 p-6 backdrop-blur-sm">
           <div className="mb-10 text-center">
@@ -121,10 +165,7 @@ const Index = () => {
 
                   <PayerPlanSelector
                     value={payerPlan}
-                    onValueChange={(value) => {
-                      console.log("Payer plan changed to:", value); // Debug log
-                      setPayerPlan(value);
-                    }}
+                    onValueChange={(value) => setPayerPlan(value)}
                     options={[
                       { value: PAYER_PLANS.QLM, label: "QLM" },
                       { value: PAYER_PLANS.ALKOOT, label: "ALKOOT" },
@@ -143,7 +184,6 @@ const Index = () => {
                           onChange={(e) => setCustomPlanName(e.target.value)}
                         />
                       </div>
-                      <div>Custom plan selected (debug)</div> {/* Debug indicator */}
                     </div>
                   )}
 
@@ -264,10 +304,29 @@ const Index = () => {
                 </CardContent>
               </Card>
 
-              {/* Results table */}
-              {extractedData && <ExtractedDataTable mode="single" data={extractedData} fileName={files[0]?.name} payerPlan={payerPlan} />}
-              {comparisonResults && (
-                <ExtractedDataTable mode="compare" comparisonData={comparisonResults} fileNames={[files[0]?.name, files[1]?.name]} payerPlan={payerPlan} />
+              {/* Results table with download and copy buttons */}
+              {(extractedData || comparisonResults) && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <FileText className="h-5 w-5 text-primary" /> Extracted Data
+                      <div className="ml-auto flex gap-2">
+                        <Button size="sm" onClick={downloadData} disabled={!extractedData && !comparisonResults}>
+                          <Download className="h-4 w-4 mr-2" /> Download
+                        </Button>
+                        <Button size="sm" onClick={copyToClipboard} disabled={!extractedData && !comparisonResults}>
+                          <Copy className="h-4 w-4 mr-2" /> Copy
+                        </Button>
+                      </div>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {extractedData && <ExtractedDataTable mode="single" data={extractedData} fileName={files[0]?.name} payerPlan={payerPlan} />}
+                    {comparisonResults && (
+                      <ExtractedDataTable mode="compare" comparisonData={comparisonResults} fileNames={[files[0]?.name, files[1]?.name]} payerPlan={payerPlan} />
+                    )}
+                  </CardContent>
+                </Card>
               )}
             </div>
           </div>
