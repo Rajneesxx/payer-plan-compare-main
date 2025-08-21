@@ -135,17 +135,26 @@ const Index = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-surface" key={payerPlan}>
+        <div className="min-h-screen bg-gradient-surface">
       <div className="container mx-auto px-4 py-12 max-w-6xl">
         <div className="rounded-3xl bg-foreground/5 shadow-lg ring-1 ring-black/5 p-6 backdrop-blur-sm">
-          <div className="mb-10 text-center">
-            <h1 className="text-2xl font-semibold">
-              <span className="text-[hsl(var(--brand-gray))]">Rapid</span>
-              <span className="ml-1 text-[hsl(var(--brand-orange))]">Extractor</span>
-            </h1>
-            <p className="text-sm text-muted-foreground">Extract and structure data from PDFs instantly.</p>
-          </div>
-
+        {/* Header */}
+        <div className="mb-10">
+  <div className="mx-auto w-fit rounded-3xl bg-foreground/5 backdrop-blur-sm">
+    <div className="flex flex-col items-center bg-white/80 px-6 py-4 rounded-2xl shadow-md border border-border">
+      <div className="text-center">
+        <h1 className="text-2xl font-semibold tracking-tight">
+          <span className="text-[hsl(var(--brand-gray))]">Rapid</span>
+          <span className="ml-1 text-[hsl(var(--brand-orange))]">Extractor</span>
+        </h1>
+        <p className="text-sm text-muted-foreground">Helps you instantly extract and structure data from complex PDFs.</p>
+        <p className="text-sm text-muted-foreground">The tool processes files in real-time; no setup, no hassle</p>
+        <p className="text-sm text-muted-foreground">so you can quickly turn unstructured PDFs into structured data</p>
+        <p className="text-sm text-muted-foreground">for analysis, comparison, or automation.</p>
+      </div>
+    </div>
+  </div>
+</div>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Left Panel */}
             <div className="space-y-6">
