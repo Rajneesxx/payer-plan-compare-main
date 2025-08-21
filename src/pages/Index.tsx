@@ -44,7 +44,6 @@ const Index = () => {
     setCustomFields(newFields);
   };
 
-  // JSON copy/download helpers
   const exportJson = (data: unknown, filename: string) => {
     try {
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
@@ -182,61 +181,119 @@ const Index = () => {
                   <Button onClick={handleExtract} disabled={!canProcess || isProcessing} className="w-full bg-gradient-primary rounded-lg">
                     {isProcessing ? "Processing..." : uploadMode === "single" ? "Extract Data" : "Compare Files"}
                   </Button>
-
-                  {/* Custom Fields panel only when Custom Extraction selected */}
-                  {isCustom && (
-                    <div className="mt-4 space-y-2">
-                      <Input
-                        placeholder="Custom Payer Plan Name"
-                        value={customPlanName}
-                        onChange={(e) => setCustomPlanName(e.target.value)}
-                        className="w-full bg-card border-border shadow-sm"
-                      />
-                      {customFields.map((field, idx) => (
-                        <div key={idx} className="flex gap-2 items-center">
-                          <Input
-                            placeholder={`Field ${idx + 1}`}
-                            value={field}
-                            onChange={(e) => updateCustomField(idx, e.target.value)}
-                            className="flex-1 bg-card border-border shadow-sm"
-                          />
-                          {customFields.length > 1 && (
-                            <Button variant="ghost" size="sm" onClick={() => removeCustomField(idx)}>
-                              <X className="h-4 w-4" />
-                            </Button>
-                          )}
-                        </div>
-                      ))}
-                      <Button type="button" variant="outline" size="sm" onClick={addCustomField}>
-                        <Plus className="h-3 w-3 mr-1" /> Add Field
-                      </Button>
-                    </div>
-                  )}
                 </CardContent>
               </Card>
             </div>
 
             {/* Right Panel */}
-            {hasResults && (
-              <div className="space-y-4">
-                {extractedData && (
-                  <div className="space-y-4">
-                    <ExtractedDataTable mode="single" data={extractedData} fileName={files[0]?.name} payerPlan={payerPlan} />
-                    <Button onClick={() => exportJson(extractedData, "extracted.json")} className="bg-gradient-primary">
-                      Download JSON
+            <div className="space-y-6">
+              {/* Field Preview or Custom Fields */}
+              {isCustom ? (
+                <Card className="bg-card shadow-md border border-border/70">
+                  <CardHeader>
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      <Search className="h-5 w-5 text-primary" /> Custom Fields ({resolvedCustomFields.length})
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <Input
+                      placeholder="Custom Payer Plan Name"
+                      value={customPlanName}
+                      onChange={(e) => setCustomPlanName(e.target.value)}
+                      className="w-full bg-card border-border shadow-sm"
+                    />
+                    {customFields.map((field, idx) => (
+                      <div key={idx} className="flex gap-2 items-center">
+                        <Input
+                          placeholder={`Field ${idx + 1}`}
+                          value={field}
+                          onChange={(e) => updateCustomField(idx, e.target.value)}
+                          className="flex-1 bg-card border-border shadow-sm"
+                        />
+                        {customFields.length > 1 && (
+                          <Button variant="ghost" size="sm" onClick={() => removeCustomField(idx)}>
+                            <X className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
+                    ))}
+                    <Button type="button" variant="outline" size="sm" onClick={addCustomField}>
+                      <Plus className="h-3 w-3 mr-1" /> Add Field
                     </Button>
-                  </div>
-                )}
-                {comparisonResults && (
-                  <div className="space-y-4">
-                    <ExtractedDataTable mode="compare" comparisonData={comparisonResults} fileNames={[files[0]?.name, files[1]?.name]} payerPlan={payerPlan} />
-                    <Button onClick={() => exportJson(comparisonResults, "comparison.json")} className="bg-gradient-primary">
-                      Download JSON
-                    </Button>
-                  </div>
-                )}
-              </div>
-            )}
+                  </CardContent>
+                </Card>
+              ) : (
+                <Card className="bg-card shadow-md border border-border/70">
+                  <CardHeader>
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      <Search className="h-5 w-5 text-primary" /> Expected Fields ({FIELD_MAPPINGS[payerPlan].length})
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <TooltipProvider>
+                      <div className="space-y-2 max-h-64 overflow-y-auto">
+                        {FIELD_MAPPINGS[payerPlan].map((field, idx) => (
+                          <div key={field} className="flex items-center justify-between py-2 border-b border-border/50 last:border-0">
+                            <div className="text-sm font-medium text-foreground">{idx + 1}. {field}</div>
+                            {FIELD_SUGGESTIONS[payerPlan]?.[field]?.length > 0 && (
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <button className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors">
+                                    <Info className="h-4 w-4" />
+                                  </button>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <div className="text-xs">
+                                    <div className="mb-1 font-medium text-foreground">Also look for</div>
+                                    <ul className="list-disc pl-4 space-y-0.5">
+                                      {FIELD_SUGGESTIONS[payerPlan][field].map((s, i) => (
+                                        <li key={i} className="text-muted-foreground">{s}</li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                </TooltipContent>
+                              </Tooltip>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </TooltipProvider>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Results */}
+              {hasResults ? (
+                <>
+                  {extractedData && (
+                    <div className="space-y-4">
+                      <ExtractedDataTable mode="single" data={extractedData} fileName={files[0]?.name} payerPlan={payerPlan} />
+                      <Button onClick={() => exportJson(extractedData, "extracted.json")} className="bg-gradient-primary">Download JSON</Button>
+                      <Button variant="outline" onClick={() => copyJson(extractedData)}>Copy JSON</Button>
+                    </div>
+                  )}
+                  {comparisonResults && (
+                    <div className="space-y-4">
+                      <ExtractedDataTable mode="compare" comparisonData={comparisonResults} fileNames={[files[0]?.name, files[1]?.name]} payerPlan={payerPlan} />
+                      <Button onClick={() => exportJson(comparisonResults, "comparison.json")} className="bg-gradient-primary">Download JSON</Button>
+                      <Button variant="outline" onClick={() => copyJson(comparisonResults)}>Copy JSON</Button>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <Card className="bg-card/60 shadow-md border-dashed border-2 border-border/80">
+                  <CardContent className="py-16 text-center">
+                    <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mx-auto mb-4">
+                      <FileText className="h-8 w-8 text-muted-foreground" />
+                    </div>
+                    <h3 className="text-lg font-medium text-foreground mb-2">No data extracted yet</h3>
+                    <p className="text-muted-foreground">
+                      Upload PDF files and click "Extract Data" or "Compare Files" to see results here.
+                    </p>
+                  </CardContent>
+                </Card>
+              )}
+            </div>
           </div>
         </div>
       </div>
