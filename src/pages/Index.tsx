@@ -13,19 +13,6 @@ import { useToast } from "@/hooks/use-toast";
 import { PAYER_PLANS, FIELD_MAPPINGS, FIELD_SUGGESTIONS, type PayerPlan, type ExtractedData, type ComparisonResult } from "@/constants/fields";
 import { extractDataApi, compareDataApi } from "@/services/extractionApi";
 import { cn } from "@/lib/utils";
-import { Link } from "react-router-dom";
-export default function Index() {
-  return (
-    <div className="p-6">
-      <h1 className="text-2xl font-bold">Payer Tool</h1>
-      <ul className="mt-4 space-y-2">
-        <li><Link to="/AddPayer" className="text-blue-600">➕ Add New Payer</Link></li>
-      </ul>
-    </div>
-  );
-}
-
-
 const Index = () => {
   const [openAiKey, setOpenAiKey] = useState<string>("");
   const [payerPlan, setPayerPlan] = useState<PayerPlan>(PAYER_PLANS.QLM);
