@@ -186,7 +186,7 @@ const Index = () => {
                     options={[
                       { value: PAYER_PLANS.QLM, label: "QLM" },
                       { value: PAYER_PLANS.ALKOOT, label: "ALKOOT" },
-                      { value: PAYER_PLANS.CUSTOM, label: "Custom Extraction" },
+                      { value: PAYER_PLANS.CUSTOM, label: "Custom Input" },
                     ]}
                   />
 
@@ -196,7 +196,7 @@ const Index = () => {
                         <Label htmlFor="custom-plan-name">Payer Plan Name</Label>
                         <Input
                           id="custom-plan-name"
-                          placeholder="Enter custom payer plan name"
+                          placeholder="Enter your plan name:"
                           value={customPlanName}
                           onChange={(e) => setCustomPlanName(e.target.value)}
                         />
