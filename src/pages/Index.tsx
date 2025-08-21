@@ -33,7 +33,6 @@ const Index = () => {
   const [customFields, setCustomFields] = useState<string[]>([""]);
 
   const { toast } = useToast();
-
   const resolvedCustomFields = customFields.filter((f) => f.trim() !== "");
 
   const addCustomField = () => setCustomFields([...customFields, ""]);
@@ -46,25 +45,15 @@ const Index = () => {
   };
 
   const handleExtract = async () => {
-    if (files.length === 0) {
-      toast({ title: "No files selected", description: "Please upload at least one PDF file.", variant: "destructive" });
-      return;
-    }
-    if (uploadMode === "compare" && files.length < 2) {
-      toast({ title: "Two files required", description: "Please upload two PDFs for comparison.", variant: "destructive" });
-      return;
-    }
-    if (!openAiKey) {
-      toast({ title: "Missing Rapid-Secret key", description: "Enter your key to proceed.", variant: "destructive" });
-      return;
-    }
+    if (!files.length) return toast({ title: "No files selected", variant: "destructive" });
+    if (!openAiKey) return toast({ title: "Enter Rapid-Secret key", variant: "destructive" });
+    if (uploadMode === "compare" && files.length < 2)
+      return toast({ title: "Upload two files for comparison", variant: "destructive" });
 
     setIsProcessing(true);
     const isCustom = payerPlan === PAYER_PLANS.CUSTOM;
 
     try {
-      toast({ title: "Processing started", description: `Processing ${files.length} file(s)...` });
-
       if (uploadMode === "single") {
         const data = await extractDataApi({
           file: files[0],
@@ -75,7 +64,6 @@ const Index = () => {
         });
         setExtractedData(data);
         setComparisonResults(null);
-        toast({ title: "Extraction completed", description: `Extracted from ${files[0].name}` });
       } else {
         const results = await compareDataApi({
           file1: files[0],
@@ -87,11 +75,10 @@ const Index = () => {
         });
         setComparisonResults(results);
         setExtractedData(null);
-        toast({ title: "Comparison completed", description: `Compared ${files[0].name} & ${files[1].name}` });
       }
-    } catch (error) {
-      console.error(error);
-      toast({ title: "Processing failed", description: error instanceof Error ? error.message : "Error processing PDFs", variant: "destructive" });
+    } catch (err) {
+      console.error(err);
+      toast({ title: "Extraction failed", description: err instanceof Error ? err.message : "Error", variant: "destructive" });
     } finally {
       setIsProcessing(false);
     }
@@ -100,9 +87,9 @@ const Index = () => {
   const canProcess = files.length > 0 && (uploadMode === "single" || files.length === 2);
   const hasResults = Boolean(extractedData || comparisonResults);
 
-  // Safe defaults
-  const safeFields = payerPlan === PAYER_PLANS.CUSTOM ? customFields : FIELD_MAPPINGS[payerPlan] || [];
-  const safeSuggestions = FIELD_SUGGESTIONS[payerPlan] || {};
+  // For panel
+  const fieldsToShow = payerPlan === PAYER_PLANS.CUSTOM ? resolvedCustomFields : FIELD_MAPPINGS[payerPlan] || {};
+  const suggestions = FIELD_SUGGESTIONS[payerPlan] || {};
 
   return (
     <div className="min-h-screen bg-gradient-surface">
@@ -113,10 +100,11 @@ const Index = () => {
               <span className="text-[hsl(var(--brand-gray))]">Rapid</span>
               <span className="ml-1 text-[hsl(var(--brand-orange))]">Extractor</span>
             </h1>
-            <p className="text-sm text-muted-foreground">Extract and structure data from complex PDFs instantly.</p>
+            <p className="text-sm text-muted-foreground">Extract and structure data from PDFs instantly.</p>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Left Panel */}
             <div className="space-y-6">
               <Card>
                 <CardHeader>
@@ -126,13 +114,7 @@ const Index = () => {
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <Label htmlFor="openai-key">Rapid-Secret Key</Label>
-                  <Input
-                    id="openai-key"
-                    type="password"
-                    placeholder="Enter your key"
-                    value={openAiKey}
-                    onChange={(e) => setOpenAiKey(e.target.value)}
-                  />
+                  <Input id="openai-key" type="password" value={openAiKey} onChange={(e) => setOpenAiKey(e.target.value)} />
 
                   <Separator />
 
@@ -157,28 +139,22 @@ const Index = () => {
               </Card>
             </div>
 
-            {/* Right-hand panel for preset + custom fields */}
+            {/* Right Panel: always visible */}
             <div className="space-y-6">
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <Search className="h-5 w-5 text-primary" />
-                    {payerPlan === PAYER_PLANS.CUSTOM
-                      ? `Custom Extraction (${customFields.length})`
-                      : `Expected Fields (${safeFields.length})`}
+                    {payerPlan === PAYER_PLANS.CUSTOM ? `Custom Extraction (${resolvedCustomFields.length})` : `Expected Fields (${fieldsToShow.length})`}
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="max-h-96 overflow-y-auto space-y-2">
                   <TooltipProvider>
-                    {payerPlan === PAYER_PLANS.CUSTOM && (
-                      <div className="space-y-3">
+                    {payerPlan === PAYER_PLANS.CUSTOM ? (
+                      <>
                         <div>
                           <Label>Payer Plan Name</Label>
-                          <Input
-                            placeholder="Enter custom payer plan name"
-                            value={customPlanName}
-                            onChange={(e) => setCustomPlanName(e.target.value)}
-                          />
+                          <Input placeholder="Enter custom payer plan name" value={customPlanName} onChange={(e) => setCustomPlanName(e.target.value)} />
                         </div>
                         <div>
                           <Label>Fields to extract ({customFields.length})</Label>
@@ -201,14 +177,12 @@ const Index = () => {
                             <Plus className="h-3 w-3 mr-1" /> Add Field
                           </Button>
                         </div>
-                      </div>
-                    )}
-
-                    {payerPlan !== PAYER_PLANS.CUSTOM &&
-                      safeFields.map((field, idx) => (
+                      </>
+                    ) : (
+                      fieldsToShow.map((field: string, idx: number) => (
                         <div key={idx} className="flex items-center justify-between gap-2 py-2 border-b last:border-0">
                           <div className="flex-1">{idx + 1}. {field}</div>
-                          {safeSuggestions[field]?.length > 0 && (
+                          {suggestions[field]?.length > 0 && (
                             <Tooltip>
                               <TooltipTrigger asChild>
                                 <button className="text-muted-foreground hover:text-foreground"><Info className="h-4 w-4" /></button>
@@ -217,21 +191,22 @@ const Index = () => {
                                 <div className="text-xs">
                                   <div className="font-medium mb-1">Also look for:</div>
                                   <ul className="list-disc pl-4">
-                                    {safeSuggestions[field].map((s, i) => <li key={i}>{s}</li>)}
+                                    {suggestions[field].map((s, i) => <li key={i}>{s}</li>)}
                                   </ul>
                                 </div>
                               </TooltipContent>
                             </Tooltip>
                           )}
                         </div>
-                      ))}
+                      ))
+                    )}
                   </TooltipProvider>
                 </CardContent>
               </Card>
 
               {/* Results table */}
-              {hasResults && extractedData && <ExtractedDataTable mode="single" data={extractedData} fileName={files[0]?.name} payerPlan={payerPlan} />}
-              {hasResults && comparisonResults && <ExtractedDataTable mode="compare" comparisonData={comparisonResults} fileNames={[files[0]?.name, files[1]?.name]} payerPlan={payerPlan} />}
+              {extractedData && <ExtractedDataTable mode="single" data={extractedData} fileName={files[0]?.name} payerPlan={payerPlan} />}
+              {comparisonResults && <ExtractedDataTable mode="compare" comparisonData={comparisonResults} fileNames={[files[0]?.name, files[1]?.name]} payerPlan={payerPlan} />}
             </div>
           </div>
         </div>
