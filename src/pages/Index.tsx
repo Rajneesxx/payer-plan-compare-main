@@ -14,6 +14,8 @@ import {
   PAYER_PLANS,
   FIELD_MAPPINGS,
   FIELD_SUGGESTIONS,
+  getFieldDescription,
+  getFieldType,
   type PayerPlan,
   type ExtractedData,
   type ComparisonResult,
@@ -133,6 +135,7 @@ const Index = () => {
       );
     }
   };
+
   // Reset 
   const handlePayerPlanChange = (value) => {
     if (value === PAYER_PLANS.CUSTOM) {
@@ -145,26 +148,27 @@ const Index = () => {
   };
 
   return (
-        <div className="min-h-screen bg-gradient-surface">
+    <div className="min-h-screen bg-gradient-surface">
       <div className="container mx-auto px-4 py-12 max-w-6xl">
         <div className="rounded-3xl bg-foreground/5 shadow-lg ring-1 ring-black/5 p-6 backdrop-blur-sm">
-        {/* Header */}
-        <div className="mb-10">
-  <div className="mx-auto w-fit rounded-3xl bg-foreground/5 backdrop-blur-sm">
-    <div className="flex flex-col items-center bg-white/80 px-6 py-4 rounded-2xl shadow-md border border-border">
-      <div className="text-center">
-        <h1 className="text-2xl font-semibold tracking-tight">
-          <span className="text-[hsl(var(--brand-gray))]">Rapid</span>
-          <span className="ml-1 text-[hsl(var(--brand-orange))]">Extractor</span>
-        </h1>
-        <p className="text-sm text-muted-foreground">Helps you instantly extract and structure data from complex PDFs.</p>
-        <p className="text-sm text-muted-foreground">The tool processes files in real-time; no setup, no hassle</p>
-        <p className="text-sm text-muted-foreground">so you can quickly turn unstructured PDFs into structured data</p>
-        <p className="text-sm text-muted-foreground">for analysis, comparison, or automation.</p>
-      </div>
-    </div>
-  </div>
-</div>
+          {/* Header */}
+          <div className="mb-10">
+            <div className="mx-auto w-fit rounded-3xl bg-foreground/5 backdrop-blur-sm">
+              <div className="flex flex-col items-center bg-white/80 px-6 py-4 rounded-2xl shadow-md border border-border">
+                <div className="text-center">
+                  <h1 className="text-2xl font-semibold tracking-tight">
+                    <span className="text-[hsl(var(--brand-gray))]">Rapid</span>
+                    <span className="ml-1 text-[hsl(var(--brand-orange))]">Extractor</span>
+                  </h1>
+                  <p className="text-sm text-muted-foreground">Helps you instantly extract and structure data from complex PDFs.</p>
+                  <p className="text-sm text-muted-foreground">The tool processes files in real-time; no setup, no hassle</p>
+                  <p className="text-sm text-muted-foreground">so you can quickly turn unstructured PDFs into structured data</p>
+                  <p className="text-sm text-muted-foreground">for analysis, comparison, or automation.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Left Panel */}
             <div className="space-y-6">
@@ -175,19 +179,19 @@ const Index = () => {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="openai-key" className="text-sm font-medium text-foreground">
-                    Rapid-Secret Key
-                  </Label>
-                  <Input
-                    id="openai-key"
-                    type="password"
-                    placeholder="Enter your Rapid-Secret key"
-                    value={openAiKey}
-                    onChange={(e) => setOpenAiKey(e.target.value)}
-                    className="w-full bg-card border-border shadow-sm"
-                  />
-                </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="openai-key" className="text-sm font-medium text-foreground">
+                      Rapid-Secret Key
+                    </Label>
+                    <Input
+                      id="openai-key"
+                      type="password"
+                      placeholder="Enter your Rapid-Secret key"
+                      value={openAiKey}
+                      onChange={(e) => setOpenAiKey(e.target.value)}
+                      className="w-full bg-card border-border shadow-sm"
+                    />
+                  </div>
                   <Separator />
 
                   <PayerPlanSelector
@@ -299,33 +303,58 @@ const Index = () => {
                           </div>
                         </div>
                       ) : (
-                        <div className="space-y-2">
-                          {presetFields.map((field: string, idx: number) => (
-                            <div key={idx} className="flex items-center justify-between gap-2 py-2 border-b last:border-0">
-                              <div className="flex-1">
-                                {idx + 1}. {field}
+                        <div className="space-y-3">
+                          {presetFields.map((field: string, idx: number) => {
+                            const description = getFieldDescription(payerPlan, field);
+                            const fieldType = getFieldType(payerPlan, field);
+                            
+                            return (
+                              <div key={idx} className="flex items-start justify-between gap-3 p-3 border rounded-lg bg-card hover:bg-accent/50 transition-colors">
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <span className="text-xs text-muted-foreground font-mono bg-muted px-1.5 py-0.5 rounded">
+                                      {idx + 1}
+                                    </span>
+                                    <span className="font-medium text-sm">{field}</span>
+                                    <span className="text-xs px-2 py-0.5 bg-primary/10 text-primary rounded-full">
+                                      {fieldType}
+                                    </span>
+                                  </div>
+                                  
+                                  {description && (
+                                    <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                                      {description}
+                                    </p>
+                                  )}
+                                </div>
+                                
+                                {presetSuggestions[field]?.length > 0 && (
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <button className="text-muted-foreground hover:text-foreground mt-0.5 flex-shrink-0">
+                                        <Info className="h-4 w-4" />
+                                      </button>
+                                    </TooltipTrigger>
+                                    <TooltipContent className="max-w-xs">
+                                      <div className="text-xs">
+                                        <div className="font-medium mb-2">Alternative field names to look for:</div>
+                                        <ul className="list-disc pl-4 space-y-0.5">
+                                          {presetSuggestions[field].slice(0, 4).map((s, i) => (
+                                            <li key={i}>{s}</li>
+                                          ))}
+                                        </ul>
+                                        {presetSuggestions[field].length > 4 && (
+                                          <div className="text-muted-foreground mt-1">
+                                            +{presetSuggestions[field].length - 4} more...
+                                          </div>
+                                        )}
+                                      </div>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                )}
                               </div>
-                              {presetSuggestions[field]?.length > 0 && (
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <button className="text-muted-foreground hover:text-foreground">
-                                      <Info className="h-4 w-4" />
-                                    </button>
-                                  </TooltipTrigger>
-                                  <TooltipContent>
-                                    <div className="text-xs">
-                                      <div className="font-medium mb-1">Also look for:</div>
-                                      <ul className="list-disc pl-4">
-                                        {presetSuggestions[field].map((s, i) => (
-                                          <li key={i}>{s}</li>
-                                        ))}
-                                      </ul>
-                                    </div>
-                                  </TooltipContent>
-                                </Tooltip>
-                              )}
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       )}
                     </TooltipProvider>
