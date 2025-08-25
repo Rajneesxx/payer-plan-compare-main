@@ -7,7 +7,7 @@ export const PAYER_PLANS = {
 export type PayerPlan = keyof typeof PAYER_PLANS;
 
 export const QLM_FIELDS = [
-  "Insured", 
+  "Insured(Organisation to which it is insured)", 
   "Policy No",
   "Period of Insurance", 
   "Plan", 
