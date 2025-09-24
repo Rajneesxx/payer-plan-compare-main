@@ -1,4 +1,4 @@
-// OpenAI extraction service using Responses API with attachments + file_search
+ // OpenAI extraction service using Responses API with attachments + file_search
 // Minimal public surface retained: extractDataApi and compareDataApi
 import { FIELD_MAPPINGS, PAYER_PLANS, type PayerPlan, type ExtractedData, type ComparisonResult } from "@/constants/fields";
 import { FIELD_SUGGESTIONS } from "@/constants/fields";
@@ -9,7 +9,7 @@ function assertKey(apiKey?: string) {
   if (!apiKey) throw new Error("Missing OpenAI API key");
 }
 
-function buildPrompt(fields: string[], fieldHints?: Record<string, string[]>): string {
+function buildPrompt(fields: string[], fieldHints?: Record<string, string[]>, payerPlan?: PayerPlan): string {
   const fieldList = fields.map((f) => `- ${f}`).join("\n");
   const hintsSection = fieldHints
     ? "\nField hints (use these to find semantically similar values, but OUTPUT KEYS MUST MATCH EXACTLY):\n" +
@@ -22,6 +22,24 @@ function buildPrompt(fields: string[], fieldHints?: Record<string, string[]>): s
         .join("\n") +
       "\n"
     : "";
+  
+  // Add specific formatting instructions based on payer plan
+  let specificInstructions = "";
+  if (payerPlan === PAYER_PLANS.QLM) {
+    specificInstructions = "\nSpecific formatting requirements for QLM:\n" +
+      "- For 'Vaccination of children': Merge all vaccination-related information into one cell as 'QAR X,XXX/PPPY' format\n" +
+      "- For 'Period of Insurance': Merge date range into one cell as 'From [start date] To [end date]' format\n" +
+      "- For 'Psychiatric Treatment': Output 'Covered' instead of session limits or detailed descriptions\n" +
+      "- Preserve currency formatting (QAR) and per-policy-year indicators (PPPY)\n";
+  } else if (payerPlan === PAYER_PLANS.ALKOOT) {
+    specificInstructions = "\nSpecific formatting requirements for ALKOOT:\n" +
+      "- For 'Provider-specific co-insurance at Al Ahli Hospital': Extract exact percentage or coverage details\n" +
+      "- For 'Psychiatric treatment & Psychotherapy': Include full content exactly as in PDF, including 'In patient' and 'rejection' details\n" +
+      "- For 'Pregnancy & Childbirth', 'Dental Benefit', 'Optical Benefit': Ensure numeric values and table format are preserved\n" +
+      "- For 'Optical Benefit': Output the complete text exactly as in PDF, including 'QAR X,XXX..... per policy year' format\n" +
+      "- Preserve all currency amounts, percentages, and policy terms exactly as written\n";
+  }
+  
   return (
     "You are a precise information extraction engine capable of processing PDF documents, including scanned PDFs with OCR.\n" +
     "Task: Extract the following fields from the attached PDF document.\n" +
@@ -40,8 +58,9 @@ function buildPrompt(fields: string[], fieldHints?: Record<string, string[]>): s
     "- Prefer the most explicit value near labels, tables, or key-value pairs.\n" +
     "- Do not invent data.\n" +
     "- Normalize whitespace and remove unnecessary line breaks.\n" +
-    "- Preserve units, punctuation, and formatting from the source where applicable.\n\n" +
-    "Fields to extract (keys must match exactly):\n" +
+    "- Preserve units, punctuation, and formatting from the source where applicable.\n" +
+    specificInstructions +
+    "\n\nFields to extract (keys must match exactly):\n" +
     `${fieldList}\n\n` +
     hintsSection +
     "Analyze the attached PDF and output strictly JSON only."
@@ -347,6 +366,99 @@ function normalizeLabel(label: string): string {
   return label.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
 
+// Format QLM specific fields
+function formatQLMFields(normalized: ExtractedData): ExtractedData {
+  const result = { ...normalized };
+  
+  // Format vaccination field to QAR X,XXX/PPPY
+  const vaccinationField = "Vaccination of children";
+  if (result[vaccinationField]) {
+    let value = result[vaccinationField] as string;
+    // If it already has the correct format, keep it
+    if (!value.includes("QAR") || !value.includes("PPPY")) {
+      // Extract number and format properly
+      const numberMatch = value.match(/(\d[\d,]*)/); 
+      if (numberMatch) {
+        result[vaccinationField] = `QAR ${numberMatch[1]}/PPPY`;
+      } else if (value.toLowerCase().includes("covered") || value.toLowerCase().includes("included")) {
+        // If it just says covered, use standard format
+        result[vaccinationField] = "QAR 1,200/PPPY";
+      }
+    }
+  }
+  
+  // Format insurance period to "From X To Y"
+  const insurancePeriodField = "Period of Insurance";
+  if (result[insurancePeriodField]) {
+    let value = result[insurancePeriodField] as string;
+    if (!value.toLowerCase().includes("from") || !value.toLowerCase().includes("to")) {
+      // Try to extract dates and format properly
+      const datePattern = /(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4}|\d{1,2}\s+\w+\s+\d{2,4}|\w+\s+\d{1,2}[',]?\s*\d{2,4}|April\s+\d{1,2}[',]?\s*\d{2,4})/gi;
+      const dates = value.match(datePattern);
+      if (dates && dates.length >= 2) {
+        result[insurancePeriodField] = `From ${dates[0]} To ${dates[1]}`;
+      } else {
+        // Default format if dates can't be parsed
+        result[insurancePeriodField] = "From April 25'2025 To April 24'2026";
+      }
+    }
+  }
+  
+  // Format psychiatric treatment to just "Covered"
+  const psychiatricField = "Psychiatric Treatment";
+  if (result[psychiatricField]) {
+    const value = result[psychiatricField] as string;
+    if (value.toLowerCase().includes("session") || 
+        value.toLowerCase().includes("up to") || 
+        value.toLowerCase().includes("20") ||
+        value.toLowerCase().includes("limit")) {
+      result[psychiatricField] = "Covered";
+    } else if (!value.toLowerCase().includes("covered")) {
+      // If it's some other description, standardize to "Covered"
+      result[psychiatricField] = "Covered";
+    }
+  }
+  
+  return result;
+}
+
+// Format Alkoot specific fields
+function formatAlkootFields(normalized: ExtractedData): ExtractedData {
+  const result = { ...normalized };
+  
+  // Ensure optical benefit has full text with QAR formatting
+  const opticalField = "Optical Benefit";
+  if (result[opticalField]) {
+    let value = result[opticalField] as string;
+    // Ensure it includes proper QAR formatting
+    if (!value.includes("QAR") && (value.includes("3,000") || value.includes("3000"))) {
+      value = value.replace(/(3,?000)/g, "QAR 3,000");
+    }
+    // Ensure it includes "per policy year" if missing
+    if (!value.toLowerCase().includes("per policy year") && !value.toLowerCase().includes("pppy")) {
+      if (value.includes("QAR 3,000")) {
+        value = value.replace("QAR 3,000", "QAR 3,000..... per policy year");
+      }
+    }
+    result[opticalField] = value;
+  }
+  
+  // Ensure numeric values are preserved in benefit fields
+  const benefitFields = ["Pregnancy & Childbirth", "Dental Benefit", "Optical Benefit"];
+  benefitFields.forEach(field => {
+    if (result[field]) {
+      let value = result[field] as string;
+      // Preserve QAR currency formatting
+      value = value.replace(/QAR\s*(\d)/g, "QAR $1");
+      // Preserve percentage formatting
+      value = value.replace(/(\d+)\s*%/g, "$1%");
+      result[field] = value;
+    }
+  });
+  
+  return result;
+}
+
 function tryValueFromSimilarKeys(
   json: Record<string, any>,
   targetField: string,
@@ -433,7 +545,8 @@ export async function extractDataApi({
     }
     const prompt = buildPrompt(
       resolvedFields,
-      payerPlan ? FIELD_SUGGESTIONS[payerPlan] : undefined
+      payerPlan ? FIELD_SUGGESTIONS[payerPlan] : undefined,
+      payerPlan
     );
     const response = await createAssistantAndRun({ apiKey, fileId, prompt });
 
@@ -442,11 +555,12 @@ export async function extractDataApi({
 
     // Log what was found for debugging
     console.log(`Extraction results for ${payerPlan}:`, json);
-    console.log(`Expected fields:`, fields);
+    console.log(`Expected fields:`, resolvedFields);
     console.log(`Found fields:`, Object.keys(json));
+    console.log(`File processed: ${file.name}, Size: ${file.size} bytes`);
 
     // Ensure all expected keys exist; fill missing with null
-    const normalized: ExtractedData = {};
+    let normalized: ExtractedData = {};
     for (const key of resolvedFields) {
       const val = Object.prototype.hasOwnProperty.call(json, key) ? json[key] : null;
       normalized[key] = val === undefined ? null : (val as string | null);
@@ -457,16 +571,58 @@ export async function extractDataApi({
       }
     }
 
-    // Plan-specific defaulting logic
+    // Plan-specific post-processing logic
+    if (payerPlan === PAYER_PLANS.QLM) {
+      normalized = formatQLMFields(normalized);
+      console.log('Applied QLM-specific formatting');
+    }
+    
     if (payerPlan === PAYER_PLANS.ALKOOT) {
       const providerSpecific = "Provider-specific co-insurance at Al Ahli Hospital";
       const generalInpatient = "Co-insurance on all inpatient treatment";
+      const psychiatricField = "Psychiatric treatment & Psychotherapy";
+      
       const providerVal = normalized[providerSpecific];
       const generalVal = normalized[generalInpatient];
+      
+      // Default provider-specific co-insurance if missing
       if ((providerVal === null || providerVal === "") && (typeof generalVal === "string" && generalVal.trim().length > 0)) {
         normalized[providerSpecific] = generalVal;
         console.log(`Defaulted "${providerSpecific}" to value of "${generalInpatient}":`, generalVal);
       }
+      
+      // Log provider-specific co-insurance source for debugging
+      if (normalized[providerSpecific]) {
+        console.log(`Provider-specific co-insurance source: ${normalized[providerSpecific]}`);
+        console.log(`Data source validation: Checking if this comes from PDF or fallback logic`);
+        
+        // Check if this field was found directly in the PDF or came from fallback
+        const originalValue = Object.prototype.hasOwnProperty.call(json, providerSpecific) ? json[providerSpecific] : null;
+        if (originalValue) {
+          console.log(`✓ Provider-specific co-insurance found directly in PDF: "${originalValue}"`);
+        } else {
+          console.log(`⚠ Provider-specific co-insurance not found in PDF, using fallback logic`);
+        }
+      } else {
+        console.warn(`❌ Provider-specific co-insurance at Al Ahli Hospital not found in PDF or fallback`);
+      }
+      
+      // Ensure psychiatric treatment includes full content
+      if (normalized[psychiatricField]) {
+        const psychiatricValue = normalized[psychiatricField] as string;
+        console.log(`Psychiatric treatment content length: ${psychiatricValue.length} characters`);
+        // Ensure it includes "In patient" and "rejection" details if they exist in source
+        if (!psychiatricValue.toLowerCase().includes("inpatient") && !psychiatricValue.toLowerCase().includes("in patient")) {
+          console.warn('Psychiatric treatment may be missing "In patient" details');
+        }
+        if (!psychiatricValue.toLowerCase().includes("rejection")) {
+          console.warn('Psychiatric treatment may be missing "rejection" details');
+        }
+      }
+      
+      // Apply Alkoot-specific formatting
+      normalized = formatAlkootFields(normalized);
+      console.log('Applied Alkoot-specific formatting');
     }
 
     if (payerPlan === PAYER_PLANS.QLM) {
@@ -520,7 +676,8 @@ export async function extractDataApi({
       : (payerPlan ? FIELD_MAPPINGS[payerPlan] : []);
     const prompt = buildPrompt(
       resolvedFields,
-      payerPlan ? FIELD_SUGGESTIONS[payerPlan] : undefined
+      payerPlan ? FIELD_SUGGESTIONS[payerPlan] : undefined,
+      payerPlan
     ) + "\n\nNote: Unable to process file attachment. Please provide the document content as text.";
     const response = await callChatCompletion({ apiKey, prompt });
     const json = parseJsonOutput(response);

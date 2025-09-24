@@ -101,9 +101,22 @@ const Index = () => {
 
     if (dataToExport.length === 0) return;
 
+    // Helper function to properly escape CSV values
+    const escapeCsvValue = (value: any): string => {
+      if (value === null || value === undefined) return '';
+      const stringValue = String(value);
+      // If the value contains comma, newline, or quotes, wrap it in quotes and escape internal quotes
+      if (stringValue.includes(',') || stringValue.includes('\n') || stringValue.includes('"')) {
+        return `"${stringValue.replace(/"/g, '""')}"`;
+      }
+      return stringValue;
+    };
+
     const csv = [
       Object.keys(dataToExport[0]).join(","),
-      ...dataToExport.map((row) => Object.values(row).join(",")),
+      ...dataToExport.map((row) => 
+        Object.values(row).map(escapeCsvValue).join(",")
+      ),
     ].join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
     const url = window.URL.createObjectURL(blob);
