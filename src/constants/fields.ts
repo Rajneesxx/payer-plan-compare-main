@@ -145,21 +145,36 @@ export const FIELD_SUGGESTIONS = {
       "Hospital-specific co-insurance",
       "Al Ahli co-insurance",
       "Hospital co-insurance percentage",
-      "Al Ahli benefits"
+      "Al Ahli benefits",
+      "Co-insurance at Al Ahli",
+      "Al Ahli Hospital coverage",
+      "Al Ahli Hospital benefits",
+      "Co-insurance - Al Ahli",
+      "Al Ahli specific co-insurance"
     ],
     "Co-insurance on all inpatient treatment": [
       "Inpatient co-insurance",
       "Hospital co-insurance",
       "Inpatient treatment co-insurance",
       "Hospital admission co-insurance",
-      "Inpatient coverage"
+      "Inpatient coverage",
+      "Co-insurance for inpatient",
+      "Inpatient treatment coverage",
+      "Hospital stay co-insurance",
+      "Inpatient care co-insurance",
+      "Co-insurance - Inpatient"
     ],
     "Deductible on consultation": [
       "Consultation deductible",
       "Outpatient deductible",
       "Per visit excess",
       "Consultation excess",
-      "Outpatient excess"
+      "Outpatient excess",
+      "Doctor visit deductible",
+      "Clinic visit excess",
+      "Outpatient visit co-pay",
+      "Consultation co-payment",
+      "Deductible - Outpatient"
     ],
     "Vaccination & Immunization": [
       "Vaccination coverage",

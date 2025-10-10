@@ -43,7 +43,13 @@ function buildPrompt(fields: string[], fieldHints?: Record<string, string[]>, pa
   return (
     "You are a precise information extraction engine capable of processing PDF documents, including scanned PDFs with OCR.\n" +
     "Task: Extract the following fields from the attached PDF document.\n" +
-    "Rules:\n" +
+    "Rules for table-based extraction:\n" +
+    "- When extracting from tables, identify the target field name in the first column\n" +
+    "- Return ONLY the text from the next column of the same row, exactly as it appears\n" +
+    "- If the next column is empty, return 'No data'\n" +
+    "- Do not include any descriptive text from the field name column\n" +
+    "- Preserve all formatting, including punctuation, case, and special characters\n" +
+    "\nGeneral extraction rules:\n" +
     "- Return JSON only (no prose or explanations).\n" +
     "- Use EXACT keys from the field list below.\n" +
     "- If a field is not clearly present in the document, set its value to null.\n" +
@@ -63,6 +69,7 @@ function buildPrompt(fields: string[], fieldHints?: Record<string, string[]>, pa
     "\n\nFields to extract (keys must match exactly):\n" +
     `${fieldList}\n\n` +
     hintsSection +
+    
     "Analyze the attached PDF and output strictly JSON only."
   );
 }
