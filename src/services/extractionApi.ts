@@ -8,7 +8,6 @@ const OPENAI_BASE = "https://api.openai.com/v1";
 function assertKey(apiKey?: string) {
   if (!apiKey) throw new Error("Missing OpenAI API key");
 }
-
 function buildPrompt(
   fields: string[],
   fieldHints?: Record<string, string[]>,
@@ -44,36 +43,44 @@ function buildPrompt(
     case PAYER_PLANS.ALKOOT:
       specificInstructions =
         "\nALKOOT FORMAT RULES:\n" +
-        "- Extract exact percentages, amounts, and table content\n" +
-        "- Preserve full text for Psychiatric, Optical, Dental, Pregnancy benefits\n" +
-        "- Keep currency (QAR), %, 'per policy year' indicators intact\n";
+        "- Extract exact percentages, amounts, and full text\n" +
+        "- Preserve content for Psychiatric, Optical, Dental, and Pregnancy fields\n" +
+        "- Keep QAR, %, and 'per policy year' units intact\n";
       break;
     default:
       break;
   }
 
   return (
-    "You are a precise data extraction system. Extract ONLY the requested fields from the PDF and return pure JSON.\n\n" +
-    "=== EXTRACTION RULES ===\n" +
-    "1. The PDF tables are structured with the **left column as the field label** and the **right column as the value**.\n" +
-    "2. Match each field name or its synonyms against the left column (labels).\n" +
-    "3. Extract the **entire cell content** from the right column as the value.\n" +
-    "4. Preserve formatting: currencies (QAR), %, units, dates, and text qualifiers exactly as shown.\n" +
-    "5. If multiple matches exist, choose the most complete or summary table entry.\n\n" +
-    "=== DATA QUALITY ===\n" +
-    "✓ Use EXACT field keys (case-sensitive)\n" +
-    "✓ Never fabricate data — return null if not found\n" +
-    "✓ Preserve whitespace normalization but not formatting (e.g., keep 'QAR 1,000')\n" +
-    "✓ Detect and correct OCR noise (O↔0, I↔1, spacing errors)\n" +
-    "✗ Do not include comments, markdown, or text outside of JSON\n" +
-    "✗ No assumptions or inferred values\n\n" +
+    "You are a precision data extraction agent. Your task is to extract specific fields from the PDF and return only valid JSON.\n\n" +
+    "=== GENERAL EXTRACTION STRATEGY ===\n" +
+    "1. Search the entire PDF for each field name or its synonyms.\n" +
+    "2. PRIORITY 1 → **Tables:**\n" +
+    "   - Treat the LEFT column as the label and the RIGHT column as the value.\n" +
+    "   - Capture the entire cell value from the right column.\n" +
+    "3. PRIORITY 2 → **Paragraphs or Headings:**\n" +
+    "   - If a field is not found in a table, search body text.\n" +
+    "   - Match using label proximity (the text immediately following the label is the value).\n" +
+    "   - Capture complete phrases, numbers, or ranges following the label.\n" +
+    "4. PRIORITY 3 → **Footnotes or Summary Sections:**\n" +
+    "   - If still missing, check summary tables or coverage descriptions.\n\n" +
+    "=== DATA RULES ===\n" +
+    "✓ Output keys must match the provided field names exactly (case-sensitive).\n" +
+    "✓ Preserve all units, currencies, and percentages (e.g., 'QAR 1,500', '80%').\n" +
+    "✓ Normalize spaces but keep readable format (e.g., 'QAR 1,000 per visit').\n" +
+    "✓ If not found, output null (never invent values).\n" +
+    "✓ Correct OCR errors (0↔O, 1↔l, joined words).\n" +
+    "✗ No extra commentary, markdown, or text outside of JSON.\n\n" +
+    "=== FIELD HIERARCHY (for multiple matches) ===\n" +
+    "1. Summary table entries > 2. Coverage table > 3. Paragraph mention > 4. Footnote.\n\n" +
     specificInstructions +
-    "\n=== FIELDS TO EXTRACT (keys must match exactly) ===\n" +
+    "\n=== FIELDS TO EXTRACT ===\n" +
     `${fieldList}\n` +
     hintsSection +
-    "\nOutput ONLY valid JSON in the format:\n{\n  \"FieldName\": \"ExtractedValue\",\n  ...\n}"
+    "\nOutput ONLY valid JSON in this format:\n{\n  \"FieldName\": \"ExtractedValue\",\n  ...\n}"
   );
 }
+
 
 async function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -131,7 +138,7 @@ async function callChatCompletion(params: {
     ],
     response_format: { type: "json_object" },
     temperature: 0,
-    max_tokens: 1500,
+    max_tokens: 2000,
   };
 
   const res = await fetch(`${OPENAI_BASE}/chat/completions`, {
