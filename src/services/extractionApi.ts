@@ -1,4 +1,4 @@
- // OpenAI extraction service using Responses API with attachments + file_search
+// OpenAI extraction service using Responses API with attachments + file_search
 // Minimal public surface retained: extractDataApi and compareDataApi
 import { FIELD_MAPPINGS, PAYER_PLANS, type PayerPlan, type ExtractedData, type ComparisonResult } from "@/constants/fields";
 import { FIELD_SUGGESTIONS } from "@/constants/fields";
@@ -9,68 +9,69 @@ function assertKey(apiKey?: string) {
   if (!apiKey) throw new Error("Missing OpenAI API key");
 }
 
-function buildPrompt(fields: string[], fieldHints?: Record<string, string[]>, payerPlan?: PayerPlan): string {
-  const fieldList = fields.map((f) => `- ${f}`).join("\n");
-  const hintsSection = fieldHints
-    ? "\nField hints (use these to find semantically similar values, but OUTPUT KEYS MUST MATCH EXACTLY):\n" +
-      fields
+function buildPrompt(
+  fields: string[],
+  fieldHints?: Record<string, string[]>,
+  payerPlan?: PayerPlan
+): string {
+  const safeFields = Array.isArray(fields) ? fields : [];
+  const fieldList = safeFields.map((f) => `- ${f}`).join("\n");
+
+  let hintsSection = "";
+  if (fieldHints && typeof fieldHints === "object" && safeFields.length) {
+    hintsSection =
+      "\nFIELD SYNONYMS (search only; output keys must match exactly):\n" +
+      safeFields
         .map((f) => {
           const hints = fieldHints[f];
-          if (!hints || hints.length === 0) return `- ${f}: (no hints)`;
-          return `- ${f}: also look for → ${hints.join(", ")}`;
+          if (!hints || !Array.isArray(hints) || hints.length === 0) return "";
+          return `- ${f}: ${hints.join(", ")}`;
         })
+        .filter(Boolean)
         .join("\n") +
-      "\n"
-    : "";
-  
-  // Add specific formatting instructions based on payer plan
-  let specificInstructions = "";
-  if (payerPlan === PAYER_PLANS.QLM) {
-    specificInstructions = "\nSpecific formatting requirements for QLM:\n" +
-      "- For 'Vaccination of children': Merge all vaccination-related information into one cell as 'QAR X,XXX/PPPY' format\n" +
-      "- For 'Period of Insurance': Merge date range into one cell as 'From [start date] To [end date]' format\n" +
-      "- For 'Psychiatric Treatment': Output 'Covered' instead of session limits or detailed descriptions\n" +
-      "- Preserve currency formatting (QAR) and per-policy-year indicators (PPPY)\n";
-  } else if (payerPlan === PAYER_PLANS.ALKOOT) {
-    specificInstructions = "\nSpecific formatting requirements for ALKOOT:\n" +
-      "- For 'Provider-specific co-insurance at Al Ahli Hospital': Extract exact percentage or coverage details\n" +
-      "- For 'Psychiatric treatment & Psychotherapy': Include full content exactly as in PDF, including 'In patient' and 'rejection' details\n" +
-      "- For 'Pregnancy & Childbirth', 'Dental Benefit', 'Optical Benefit': Ensure numeric values and table format are preserved\n" +
-      "- For 'Optical Benefit': Output the complete text exactly as in PDF, including 'QAR X,XXX..... per policy year' format\n" +
-      "- Preserve all currency amounts, percentages, and policy terms exactly as written\n";
+      "\n";
   }
-  
+
+  let specificInstructions = "";
+  switch (payerPlan) {
+    case PAYER_PLANS.QLM:
+      specificInstructions =
+        "\nQLM FORMAT RULES:\n" +
+        "- 'Vaccination of children': Merge as 'QAR X,XXX/PPPY'\n" +
+        "- 'Period of Insurance': Format as 'From [date] To [date]'\n" +
+        "- 'Psychiatric Treatment': Return only 'Covered'\n";
+      break;
+    case PAYER_PLANS.ALKOOT:
+      specificInstructions =
+        "\nALKOOT FORMAT RULES:\n" +
+        "- Extract exact percentages, amounts, and table content\n" +
+        "- Preserve full text for Psychiatric, Optical, Dental, Pregnancy benefits\n" +
+        "- Keep currency (QAR), %, 'per policy year' indicators intact\n";
+      break;
+    default:
+      break;
+  }
+
   return (
-    "You are a precise information extraction engine capable of processing PDF documents, including scanned PDFs with OCR.\n" +
-    "Task: Extract the following fields from the attached PDF document.\n" +
-    "Rules for table-based extraction:\n" +
-    "- When extracting from tables, identify the target field name in the first column\n" +
-    "- Return ONLY the text from the next column of the same row, exactly as it appears\n" +
-    "- If the next column is empty, return 'No data'\n" +
-    "- Do not include any descriptive text from the field name column\n" +
-    "- Preserve all formatting, including punctuation, case, and special characters\n" +
-    "\nGeneral extraction rules:\n" +
-    "- Return JSON only (no prose or explanations).\n" +
-    "- Use EXACT keys from the field list below.\n" +
-    "- If a field is not clearly present in the document, set its value to null.\n" +
-    "- Look for field names that are SIMILAR or RELATED to the requested fields.\n" +
-    "- Check for variations, abbreviations, and alternative phrasings.\n" +
-    "- Search in tables, headers, paragraphs, and any text content.\n" +
-    "- For medical insurance documents, look for:\n" +
-    "  * Deductibles, co-pays, co-insurance percentages\n" +
-    "  * Coverage limits and percentages\n" +
-    "  * Hospital-specific benefits\n" +
-    "  * Policy numbers, dates, and plan details\n" +
-    "- Prefer the most explicit value near labels, tables, or key-value pairs.\n" +
-    "- Do not invent data.\n" +
-    "- Normalize whitespace and remove unnecessary line breaks.\n" +
-    "- Preserve units, punctuation, and formatting from the source where applicable.\n" +
+    "You are a precise data extraction system. Extract ONLY the requested fields from the PDF and return pure JSON.\n\n" +
+    "=== EXTRACTION RULES ===\n" +
+    "1. The PDF tables are structured with the **left column as the field label** and the **right column as the value**.\n" +
+    "2. Match each field name or its synonyms against the left column (labels).\n" +
+    "3. Extract the **entire cell content** from the right column as the value.\n" +
+    "4. Preserve formatting: currencies (QAR), %, units, dates, and text qualifiers exactly as shown.\n" +
+    "5. If multiple matches exist, choose the most complete or summary table entry.\n\n" +
+    "=== DATA QUALITY ===\n" +
+    "✓ Use EXACT field keys (case-sensitive)\n" +
+    "✓ Never fabricate data — return null if not found\n" +
+    "✓ Preserve whitespace normalization but not formatting (e.g., keep 'QAR 1,000')\n" +
+    "✓ Detect and correct OCR noise (O↔0, I↔1, spacing errors)\n" +
+    "✗ Do not include comments, markdown, or text outside of JSON\n" +
+    "✗ No assumptions or inferred values\n\n" +
     specificInstructions +
-    "\n\nFields to extract (keys must match exactly):\n" +
-    `${fieldList}\n\n` +
+    "\n=== FIELDS TO EXTRACT (keys must match exactly) ===\n" +
+    `${fieldList}\n` +
     hintsSection +
-    
-    "Analyze the attached PDF and output strictly JSON only."
+    "\nOutput ONLY valid JSON in the format:\n{\n  \"FieldName\": \"ExtractedValue\",\n  ...\n}"
   );
 }
 
