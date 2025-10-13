@@ -52,34 +52,38 @@ function buildPrompt(
   }
 
   return (
-    "You are a precision data extraction agent. Your task is to extract specific fields from the PDF and return only valid JSON.\n\n" +
-    "=== GENERAL EXTRACTION STRATEGY ===\n" +
-    "1. Search the entire PDF for each field name or its synonyms.\n" +
-    "2. PRIORITY 1 → **Tables:**\n" +
-    "   - Treat the LEFT column as the label and the RIGHT column as the value.\n" +
-    "   - Capture the entire cell value from the right column.\n" +
-    "3. PRIORITY 2 → **Paragraphs or Headings:**\n" +
-    "   - If a field is not found in a table, search body text.\n" +
-    "   - Match using label proximity (the text immediately following the label is the value).\n" +
-    "   - Capture complete phrases, numbers, or ranges following the label.\n" +
-    "4. PRIORITY 3 → **Footnotes or Summary Sections:**\n" +
-    "   - If still missing, check summary tables or coverage descriptions.\n\n" +
-    "=== DATA RULES ===\n" +
-    "✓ Output keys must match the provided field names exactly (case-sensitive).\n" +
-    "✓ Preserve all units, currencies, and percentages (e.g., 'QAR 1,500', '80%').\n" +
-    "✓ Normalize spaces but keep readable format (e.g., 'QAR 1,000 per visit').\n" +
-    "✓ If not found, output null (never invent values).\n" +
-    "✓ Correct OCR errors (0↔O, 1↔l, joined words).\n" +
-    "✗ No extra commentary, markdown, or text outside of JSON.\n\n" +
-    "=== FIELD HIERARCHY (for multiple matches) ===\n" +
-    "1. Summary table entries > 2. Coverage table > 3. Paragraph mention > 4. Footnote.\n\n" +
+  "You are a precise information extraction engine capable of processing PDF documents, including scanned PDFs with OCR.\n" +
+    "Task: Extract the following fields from the attached PDF document.\n" +
+    "Rules for table-based extraction:\n" +
+    "- When extracting from tables, identify the target field name in the first column\n" +
+    "- Return ONLY the text from the next column of the same row, exactly as it appears\n" +
+    "- If the next column is empty, return 'No data'\n" +
+    "- Do not include any descriptive text from the field name column\n" +
+    "- Preserve all formatting, including punctuation, case, and special characters\n" +
+    "\nGeneral extraction rules:\n" +
+    "- Return JSON only (no prose or explanations).\n" +
+    "- Use EXACT keys from the field list below.\n" +
+    "- If a field is not clearly present in the document, set its value to null.\n" +
+    "- Look for field names that are SIMILAR or RELATED to the requested fields.\n" +
+    "- Check for variations, abbreviations, and alternative phrasings.\n" +
+    "- Search in tables, headers, paragraphs, and any text content.\n" +
+    "- For medical insurance documents, look for:\n" +
+    "  * Deductibles, co-pays, co-insurance percentages\n" +
+    "  * Coverage limits and percentages\n" +
+    "  * Hospital-specific benefits\n" +
+    "  * Policy numbers, dates, and plan details\n" +
+    "- Prefer the most explicit value near labels, tables, or key-value pairs.\n" +
+    "- Do not invent data.\n" +
+    "- Normalize whitespace and remove unnecessary line breaks.\n" +
+    "- Preserve units, punctuation, and formatting from the source where applicable.\n" +
     specificInstructions +
-    "\n=== FIELDS TO EXTRACT ===\n" +
-    `${fieldList}\n` +
+    "\n\nFields to extract (keys must match exactly):\n" +
+    `${fieldList}\n\n` +
     hintsSection +
-    "\nOutput ONLY valid JSON in this format:\n{\n  \"FieldName\": \"ExtractedValue\",\n  ...\n}"
+    "Analyze the attached PDF and output strictly JSON only."
   );
 }
+
 
 
 async function fileToBase64(file: File): Promise<string> {
@@ -138,7 +142,7 @@ async function callChatCompletion(params: {
     ],
     response_format: { type: "json_object" },
     temperature: 0,
-    max_tokens: 2000,
+    max_tokens: 10000,
   };
 
   const res = await fetch(`${OPENAI_BASE}/chat/completions`, {
