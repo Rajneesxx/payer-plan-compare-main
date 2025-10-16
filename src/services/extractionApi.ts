@@ -571,20 +571,18 @@ export async function extractDataApi({
   payerPlan?: PayerPlan;
   payerPlanName?: string;
 }): Promise<ExtractedData> {
+  assertKey(apiKey);
   const startTime = Date.now();
-  const logContext = {
-    fileName: file.name,
-    fileSize: file.size,
-    fileType: file.type,
-    payerPlan: payerPlan || 'unknown',
-    fields: fields || [],
-    timestamp: new Date().toISOString(),
-  };
+  let success = false;
+  let errorMessage = '';
+  let extractedFields = 0;
+
+  // Log extraction start
+  await logExtraction(file.name, 'started').catch(err => 
+    console.error('Failed to log extraction start:', err)
+  );
 
   try {
-    console.log(`[${logContext.timestamp}] Starting extraction for ${file.name}`, logContext);
-    await logExtraction(file.name, 'started');
-
     // Track file upload start
     trackExtractionEvent('file_upload_started', {
       file_name: file.name,
@@ -593,112 +591,195 @@ export async function extractDataApi({
       payer_plan: payerPlanName || 'unknown',
     });
 
-    // 1) Upload file to OpenAI
+    // 1) Upload file
     const fileId = await uploadFileToOpenAI(file, apiKey);
-    console.log(`[${new Date().toISOString()}] File uploaded: ${fileId}`);
 
-    // 2) Call API with file
-    const resolvedFields = fields || Object.keys(FIELD_MAPPINGS);
+    // Track successful file upload
+    trackExtractionEvent('file_upload_completed', {
+      file_name: file.name,
+      file_size: file.size,
+      payer_plan: payerPlanName || 'unknown',
+    });
+
+    // 2) Resolve fields
+    const resolvedFields = (fields && fields.length > 0)
+      ? fields
+      : (payerPlan ? FIELD_MAPPINGS[payerPlan] : []);
+    if (!resolvedFields || resolvedFields.length === 0) {
+      throw new Error("No fields provided to extract.");
+    }
     const prompt = buildPrompt(
       resolvedFields,
       payerPlan ? FIELD_SUGGESTIONS[payerPlan] : undefined,
       payerPlan
     );
-    
-    const result = await createAssistantAndRun({ apiKey, fileId, prompt });
+    const response = await createAssistantAndRun({ apiKey, fileId, prompt });
 
-    // 3) Parse JSON response
-    const json = parseJsonOutput(result);
-    console.log(`[${new Date().toISOString()}] Extraction results:`, json);
+    // 3) Parse JSON
+    const json = parseJsonOutput(response);
 
-    // 4) Normalize and validate extracted data
-    const normalized: ExtractedData = {};
+    // Log what was found for debugging
+    console.log(`Extraction results for ${payerPlan}:`, json);
+    console.log(`Expected fields:`, resolvedFields);
+    console.log(`Found fields:`, Object.keys(json));
+    console.log(`File processed: ${file.name}, Size: ${file.size} bytes`);
+
+    // Count extracted fields
     let foundFields = 0;
-
-    for (const field of resolvedFields) {
-      const value = json[field];
-      if (value !== null && value !== undefined && value !== '') {
-        normalized[field] = value;
+    let normalized: ExtractedData = {};
+    const missingFields: string[] = [];
+    
+    // Ensure all expected keys exist; fill missing with null
+    for (const key of resolvedFields) {
+      const val = Object.prototype.hasOwnProperty.call(json, key) ? json[key] : null;
+      normalized[key] = val === undefined ? null : (val as string | null);
+      
+      if (val !== null && val !== undefined) {
         foundFields++;
+      } else {
+        missingFields.push(key);
+        console.log(`Field "${key}" not found in extraction`);
+      }
+    }
+    
+    extractedFields = foundFields;
+    const extractionTime = Date.now() - startTime;
+    
+    // Log extraction success with details
+    if (missingFields.length > 0) {
+      console.warn(`Missing ${missingFields.length} fields:`, missingFields);
+    }
+    
+    // Track successful extraction
+    success = true;
+    trackExtractionEvent('extraction_completed', {
+      file_name: file.name,
+      file_size: file.size,
+      payer_plan: payerPlanName || 'unknown',
+      fields_expected: resolvedFields.length,
+      fields_extracted: foundFields,
+      extraction_time_ms: extractionTime,
+      extraction_success_rate: (foundFields / resolvedFields.length) * 100,
+    });
+
+    // Log successful extraction
+    await logExtraction(
+      `${file.name} - Success: ${foundFields}/${resolvedFields.length} fields extracted in ${extractionTime}ms`,
+      'success'
+    ).catch(err => console.error('Failed to log extraction success:', err));
+
+    // Plan-specific post-processing logic
+    if (payerPlan === PAYER_PLANS.QLM) {
+      normalized = formatQLMFields(normalized);
+      console.log('Applied QLM-specific formatting');
+    }
+    
+    if (payerPlan === PAYER_PLANS.ALKOOT) {
+      const providerSpecific = "Provider-specific co-insurance at Al Ahli Hospital";
+      const generalInpatient = "Co-insurance on all inpatient treatment";
+      const psychiatricField = "Psychiatric treatment & Psychotherapy";
+      
+      const providerVal = normalized[providerSpecific];
+      const generalVal = normalized[generalInpatient];
+      
+      // Default provider-specific co-insurance if missing
+      if ((providerVal === null || providerVal === "") && (typeof generalVal === "string" && generalVal.trim().length > 0)) {
+        normalized[providerSpecific] = generalVal;
+        console.log(`Defaulted "${providerSpecific}" to value of "${generalInpatient}":`, generalVal);
+      }
+      
+      // Log provider-specific co-insurance source for debugging
+      if (normalized[providerSpecific]) {
+        console.log(`Provider-specific co-insurance source: ${normalized[providerSpecific]}`);
+        
+        // Check if this field was found directly in the PDF or came from fallback
+        const originalValue = Object.prototype.hasOwnProperty.call(json, providerSpecific) ? json[providerSpecific] : null;
+        if (originalValue) {
+          console.log(`✓ Provider-specific co-insurance found directly in PDF`);
+        } else {
+          console.log(`⚠ Using fallback value for provider-specific co-insurance`);
+        }
+      }
+      
+      // Apply Alkoot-specific formatting
+      normalized = formatAlkootFields(normalized);
+      console.log('Applied Alkoot-specific formatting');
+    }
+
+    // Special handling for QLM specific fields
+    if (payerPlan === PAYER_PLANS.QLM) {
+      const hospitalField = "For Eligible Medical Expenses at Al Ahli Hospital";
+      const current = normalized[hospitalField];
+      if (current === null || current === "") {
+        // Try to find the value using various methods
+        const hints = FIELD_SUGGESTIONS[PAYER_PLANS.QLM]?.[hospitalField] || [];
+        const fromSimilar = tryValueFromSimilarKeys(json, hospitalField, hints);
+        
+        if (fromSimilar) {
+          normalized[hospitalField] = fromSimilar;
+        } else {
+          // Fall back to general co-insurance/coverage
+          const general = findGeneralCoinsuranceOrCoverage(json);
+          if (general) {
+            normalized[hospitalField] = general;
+          } else {
+            normalized[hospitalField] = "NIL";
+          }
+        }
       }
     }
 
-    // 5) Apply payer plan specific formatting
-    if (payerPlan === PAYER_PLANS.QLM) {
-      console.log(`[${new Date().toISOString()}] Applying QLM formatting`);
-      formatQLMFields(normalized);
-    } else if (payerPlan === PAYER_PLANS.ALKOOT) {
-      console.log(`[${new Date().toISOString()}] Applying ALKOOT formatting`);
-      formatAlkootFields(normalized);
-    }
-
-    // Track successful extraction
-    const durationMs = Date.now() - startTime;
-    const successContext = {
-      ...logContext,
-      durationMs,
-      extractedFields: Object.keys(normalized).length,
-      timestamp: new Date().toISOString()
-    };
-
-    console.log(`[${successContext.timestamp}] Extraction completed successfully`, successContext);
-
-    // Log successful extraction
-    try {
-      await logExtraction(
-        file.name,
-        'success',
-        JSON.stringify({
-          durationMs,
-          extractedFields: successContext.extractedFields,
-          payerPlan: payerPlan || 'unknown'
-        })
-      );
-    } catch (logError) {
-      console.error('Failed to log successful extraction:', logError);
-    }
-
-    trackExtractionEvent('extraction_success', {
-      payer_plan: payerPlan || 'unknown',
-      file_name: file.name,
-      duration_seconds: durationMs / 1000,
-      extracted_fields: successContext.extractedFields
-    });
+    // Log summary
+    const foundCount = Object.values(normalized).filter(v => v !== null).length;
+    const totalCount = resolvedFields.length;
+    const summary = `Extraction summary: ${foundCount}/${totalCount} fields found`;
+    console.log(summary);
 
     return normalized;
-
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    const errorStack = error instanceof Error ? error.stack : undefined;
-    const durationMs = Date.now() - startTime;
-
-    console.error(`[${new Date().toISOString()}] Extraction error for ${file?.name || 'unknown'}:`, {
-      error: errorMessage,
-      stack: errorStack,
-      durationMs,
-      ...logContext
+    console.error("Extraction failed:", error);
+    
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    errorMessage = errorMsg;
+    
+    // Track extraction failure
+    trackExtractionEvent('extraction_failed', {
+      file_name: file.name,
+      file_size: file.size,
+      payer_plan: payerPlanName || 'unknown',
+      error_message: errorMsg,
+      extraction_time_ms: Date.now() - startTime,
     });
-
-    // Track the error in analytics
-    trackExtractionEvent('extraction_error', {
-      error: errorMessage,
-      payer_plan: payerPlan || 'unknown',
-      file_name: file?.name || 'unknown',
-      duration_seconds: durationMs / 1000,
-    });
-
-    // Log the error to our logging service
-    try {
-      await logExtraction(
-        file?.name || 'unknown',
-        'error',
-        `Error: ${errorMessage}\nStack: ${errorStack || 'No stack trace'}`
-      );
-    } catch (logError) {
-      console.error('Failed to log extraction error:', logError);
-    }
-
+    
+    // Log extraction error
+    await logExtraction(
+      `${file.name} - Error: ${errorMsg}`,
+      'error',
+      errorMsg
+    ).catch(err => console.error('Failed to log extraction error:', err));
+    
     throw error;
+  } finally {
+    const extractionTime = Date.now() - startTime;
+    
+    // Track overall extraction attempt if not already tracked
+    if (!success) {
+      trackExtractionEvent('extraction_attempted', {
+        file_name: file.name,
+        file_size: file.size,
+        payer_plan: payerPlanName || 'unknown',
+        success: false,
+        extraction_time_ms: extractionTime,
+        error_message: errorMessage,
+      });
+      
+      // Log failed extraction attempt
+      await logExtraction(
+        `${file.name} - Failed after ${extractionTime}ms`,
+        'error',
+        errorMessage || 'Unknown error'
+      ).catch(err => console.error('Failed to log failed extraction:', err));
+    }
   }
 }
 
