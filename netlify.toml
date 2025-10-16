@@ -1,16 +1,12 @@
 # netlify.toml
 [build]
-  publish = "dist"
   command = "npm run build"
+  publish = "dist"
 
 [functions]
   directory = "netlify/functions"
   node_bundler = "esbuild"
 
-# Add this to persist the logs directory between builds
-[[plugins]]
-  package = "@netlify/plugin-functions-output"
-  [plugins.inputs]
-    functions = ["logExtraction"]
-  [plugins.inputs.outputs]
-    logs = "./logs"
+# Enable function logs
+[functions.logs]
+  enabled = true
