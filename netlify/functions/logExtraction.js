@@ -4,21 +4,26 @@ const path = require('path');
 
 // Ensure logs directory exists
 const ensureLogsDir = async () => {
-  const logDir = path.join(__dirname, 'logs');
+  const logDir = path.join(process.cwd(), 'netlify', 'functions', 'logs');
+  console.log('Ensuring log directory exists at:', logDir);
+  
   try {
     await fs.mkdir(logDir, { recursive: true });
+    console.log('Log directory ready');
+    return path.join(logDir, 'extraction_logs.txt');
   } catch (err) {
-    if (err.code !== 'EEXIST') {
-      console.error('Error creating logs directory:', err);
-      throw err;
-    }
+    console.error('Error creating logs directory:', err);
+    throw err;
   }
-  return path.join(logDir, 'extraction_logs.txt');
 };
 
 const handler = async (event, context) => {
+  console.log('--- New Request ---');
+  console.log('Event:', JSON.stringify(event, null, 2));
+  
   // Only allow POST requests
   if (event.httpMethod !== 'POST') {
+    console.log('Method not allowed:', event.httpMethod);
     return {
       statusCode: 405,
       body: JSON.stringify({ error: 'Method Not Allowed' })
@@ -26,7 +31,10 @@ const handler = async (event, context) => {
   }
 
   try {
-    const { fileName, status, error } = JSON.parse(event.body);
+    const body = JSON.parse(event.body);
+    console.log('Parsed body:', body);
+    
+    const { fileName, status, error } = body;
     const logFilePath = await ensureLogsDir();
     
     const timestamp = new Date().toISOString();
@@ -34,12 +42,10 @@ const handler = async (event, context) => {
       ? `${timestamp} | ${fileName} | ${status} | Error: ${error}\n`
       : `${timestamp} | ${fileName} | ${status}\n`;
 
-    // Append to log file
+    console.log('Writing log entry:', logLine.trim());
     await fs.appendFile(logFilePath, logLine, 'utf8');
     
-    console.log('Logged extraction:', { fileName, status, timestamp });
-    if (error) console.error('Error details:', error);
-
+    console.log('Successfully wrote to log file');
     return {
       statusCode: 200,
       body: JSON.stringify({ 
@@ -48,17 +54,19 @@ const handler = async (event, context) => {
       })
     };
   } catch (error) {
-    console.error('Error in logExtraction function:', error);
+    console.error('Error in logExtraction:', {
+      message: error.message,
+      stack: error.stack,
+      event: event
+    });
     return {
       statusCode: 500,
       body: JSON.stringify({ 
         error: 'Failed to log extraction',
-        details: error.message,
-        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+        details: error.message
       })
     };
   }
 };
 
-// Export the handler as required by Netlify
 module.exports = { handler };
