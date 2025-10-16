@@ -1,5 +1,14 @@
 [build]
   command = "npm run build"
   publish = "dist"
+  functions = "netlify/functions"
   [build.environment]
     NODE_VERSION = "18.17.1"
+
+[dev]
+  targetPort = 8080  # Add this line to match Vite's port
+
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/:splat"
+  status = 200

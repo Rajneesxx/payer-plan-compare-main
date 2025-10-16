@@ -16,7 +16,7 @@ const ensureLogsDir = async () => {
   return path.join(logDir, 'extraction_logs.txt');
 };
 
-exports.handler = async function(event, context) {
+const handler = async (event, context) => {
   // Only allow POST requests
   if (event.httpMethod !== 'POST') {
     return {
@@ -59,3 +59,6 @@ exports.handler = async function(event, context) {
     };
   }
 };
+
+// Export the handler as required by Netlify
+module.exports = { handler };
