@@ -4,7 +4,8 @@ const path = require('path');
 
 // Ensure logs directory exists
 const ensureLogsDir = async () => {
-  const logDir = path.join(process.cwd(), 'netlify', 'functions', 'logs');
+  // Use /tmp/ directory which is writable in Netlify Functions
+  const logDir = path.join('/tmp', 'extraction-logs');
   console.log('Ensuring log directory exists at:', logDir);
   
   try {
@@ -19,7 +20,6 @@ const ensureLogsDir = async () => {
 
 const handler = async (event, context) => {
   console.log('--- New Request ---');
-  console.log('Event:', JSON.stringify(event, null, 2));
   
   // Only allow POST requests
   if (event.httpMethod !== 'POST') {
@@ -32,7 +32,7 @@ const handler = async (event, context) => {
 
   try {
     const body = JSON.parse(event.body);
-    console.log('Parsed body:', body);
+    console.log('Received request with body:', JSON.stringify(body, null, 2));
     
     const { fileName, status, error } = body;
     const logFilePath = await ensureLogsDir();
@@ -42,7 +42,7 @@ const handler = async (event, context) => {
       ? `${timestamp} | ${fileName} | ${status} | Error: ${error}\n`
       : `${timestamp} | ${fileName} | ${status}\n`;
 
-    console.log('Writing log entry:', logLine.trim());
+    console.log('Writing log entry to:', logFilePath);
     await fs.appendFile(logFilePath, logLine, 'utf8');
     
     console.log('Successfully wrote to log file');
