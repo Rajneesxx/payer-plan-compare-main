@@ -768,24 +768,27 @@ export async function extractDataApi({
         extraction_time_ms: Date.now() - startTime,
         error_message: errorMessage,
       });
+    }
   }
 }
 
-export async function compareDataApi({
-  file1,
-  file2,
-  apiKey,
-  fields,
-  payerPlan,
-  payerPlanName,
-}: {
+interface CompareDataApiParams {
   file1: File;
   file2: File;
   apiKey: string;
   fields?: string[];
   payerPlan?: PayerPlan;
   payerPlanName?: string;
-}): Promise<ComparisonResult[]> {
+}
+
+export async function compareDataApi({ 
+  file1, 
+  file2, 
+  apiKey, 
+  fields, 
+  payerPlan, 
+  payerPlanName 
+}: CompareDataApiParams): Promise<ComparisonResult[]> {
   // Extract both in parallel
   const [data1, data2] = await Promise.all([
     extractDataApi({ file: file1, apiKey, fields, payerPlan, payerPlanName }),
@@ -808,3 +811,5 @@ export async function compareDataApi({
 
   return results;
 }
+
+
