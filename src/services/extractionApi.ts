@@ -571,12 +571,26 @@ export async function extractDataApi({
   payerPlan?: PayerPlan;
   payerPlanName?: string;
 }): Promise<ExtractedData> {
-  assertKey(apiKey);
   const startTime = Date.now();
-  let success = false;
-  let errorMessage = '';
-  let extractedFields = 0;
+  const logContext = {
+    fileName: file.name,
+    fileSize: file.size,
+    fileType: file.type,
+    payerPlan: payerPlan || 'unknown',
+    fields: fields || [],
+    timestamp: new Date().toISOString(),
+  };
 
+  try {
+    console.log(`[${logContext.timestamp}] Starting extraction for ${file.name}`, logContext);
+    await logExtraction(file.name, 'started');
+  } catch (logError) {
+    console.error('Failed to log extraction start:', logError);
+  }
+
+  assertKey(apiKey);
+  const completionStart = Date.now();
+  let result;
   try {
     // Track file upload start
     trackExtractionEvent('file_upload_started', {
@@ -608,10 +622,10 @@ export async function extractDataApi({
       payerPlan ? FIELD_SUGGESTIONS[payerPlan] : undefined,
       payerPlan
     );
-    const response = await createAssistantAndRun({ apiKey, fileId, prompt });
+    result = await createAssistantAndRun({ apiKey, fileId, prompt });
 
     // 3) Parse JSON
-    const json = parseJsonOutput(response);
+    const json = parseJsonOutput(result);
 
     // Log what was found for debugging
     console.log(`Extraction results for ${payerPlan}:`, json);
@@ -635,107 +649,55 @@ export async function extractDataApi({
       }
     }
     
-    extractedFields = foundFields;
-    
     // Track successful extraction
-    success = true;
-    trackExtractionEvent('extraction_completed', {
+    const durationMs = Date.now() - startTime;
+    const successContext = {
+      ...logContext,
+      durationMs,
+      extractedFields: Object.keys(normalized).length,
+      timestamp: new Date().toISOString()
+    };
+  
+    console.log(`[${successContext.timestamp}] Extraction completed successfully`, successContext);
+  
+    // Log successful extraction
+    try {
+      await logExtraction(
+        file.name,
+        'success',
+        JSON.stringify({
+          durationMs,
+          extractedFields: successContext.extractedFields,
+          payerPlan: payerPlan || 'unknown'
+        })
+      );
+    } catch (logError) {
+      console.error('Failed to log successful extraction:', logError);
+    }
+  
+    trackExtractionEvent('extraction_success', {
+      payer_plan: payerPlan || 'unknown',
       file_name: file.name,
-      file_size: file.size,
-      payer_plan: payerPlanName || 'unknown',
-      fields_expected: resolvedFields.length,
-      fields_extracted: foundFields,
-      extraction_time_ms: Date.now() - startTime,
-      extraction_success_rate: (foundFields / resolvedFields.length) * 100,
+      duration_seconds: durationMs / 1000,
+      extracted_fields: successContext.extractedFields
     });
 
     // Plan-specific post-processing logic
-    if (payerPlan === PAYER_PLANS.QLM) {
-      normalized = formatQLMFields(normalized);
-      console.log('Applied QLM-specific formatting');
-    }
-    
-    if (payerPlan === PAYER_PLANS.ALKOOT) {
-      const providerSpecific = "Provider-specific co-insurance at Al Ahli Hospital";
-      const generalInpatient = "Co-insurance on all inpatient treatment";
-      const psychiatricField = "Psychiatric treatment & Psychotherapy";
-      
-      const providerVal = normalized[providerSpecific];
-      const generalVal = normalized[generalInpatient];
-      
-      // Default provider-specific co-insurance if missing
-      if ((providerVal === null || providerVal === "") && (typeof generalVal === "string" && generalVal.trim().length > 0)) {
-        normalized[providerSpecific] = generalVal;
-        console.log(`Defaulted "${providerSpecific}" to value of "${generalInpatient}":`, generalVal);
+    try {
+      if (payerPlan === PAYER_PLANS.QLM) {
+        console.log(`[${new Date().toISOString()}] Formatting for QLM plan`, logContext);
+        normalized = formatQLMFields(normalized);
+      } else if (payerPlan === PAYER_PLANS.ALKOOT) {
+        console.log(`[${new Date().toISOString()}] Formatting for Alkoot plan`, logContext);
+        normalized = formatAlkootFields(normalized);
       }
-      
-      // Log provider-specific co-insurance source for debugging
-      if (normalized[providerSpecific]) {
-        console.log(`Provider-specific co-insurance source: ${normalized[providerSpecific]}`);
-        console.log(`Data source validation: Checking if this comes from PDF or fallback logic`);
-        
-        // Check if this field was found directly in the PDF or came from fallback
-        const originalValue = Object.prototype.hasOwnProperty.call(json, providerSpecific) ? json[providerSpecific] : null;
-        if (originalValue) {
-          console.log(`✓ Provider-specific co-insurance found directly in PDF: "${originalValue}"`);
-        } else {
-          console.log(`⚠ Provider-specific co-insurance not found in PDF, using fallback logic`);
-        }
-      } else {
-        console.warn(`❌ Provider-specific co-insurance at Al Ahli Hospital not found in PDF or fallback`);
-      }
-      
-      // Ensure psychiatric treatment includes full content
-      if (normalized[psychiatricField]) {
-        const psychiatricValue = normalized[psychiatricField] as string;
-        console.log(`Psychiatric treatment content length: ${psychiatricValue.length} characters`);
-        // Ensure it includes "In patient" and "rejection" details if they exist in source
-        if (!psychiatricValue.toLowerCase().includes("inpatient") && !psychiatricValue.toLowerCase().includes("in patient")) {
-          console.warn('Psychiatric treatment may be missing "In patient" details');
-        }
-        if (!psychiatricValue.toLowerCase().includes("rejection")) {
-          console.warn('Psychiatric treatment may be missing "rejection" details');
-        }
-      }
-      
-      // Apply Alkoot-specific formatting
-      normalized = formatAlkootFields(normalized);
-      console.log('Applied Alkoot-specific formatting');
-    }
-
-    if (payerPlan === PAYER_PLANS.QLM) {
-      const hospitalField = "For Eligible Medical Expenses at Al Ahli Hospital";
-      const current = normalized[hospitalField];
-      if (current === null || current === "") {
-        // 1) Try direct/fuzzy/hints based extraction
-        const hints = FIELD_SUGGESTIONS[PAYER_PLANS.QLM]?.[hospitalField] || [];
-        const fromSimilar = tryValueFromSimilarKeys(json, hospitalField, hints);
-        if (fromSimilar) {
-          normalized[hospitalField] = fromSimilar;
-          console.log(`Filled "${hospitalField}" via similar key lookup:`, fromSimilar);
-        } else {
-          // 2) Try hospital-specific heuristic
-          const inferred = findHospitalSpecificCoverage(json);
-          if (inferred) {
-            normalized[hospitalField] = inferred;
-            console.log(`Heuristically inferred "${hospitalField}" from raw JSON key(s):`, inferred);
-          } else {
-            // 3) Fall back to general co-insurance/coverage
-            const general = findGeneralCoinsuranceOrCoverage(json);
-            if (general) {
-              normalized[hospitalField] = general;
-              console.log(`Defaulted "${hospitalField}" from general coverage/co-insurance:`, general);
-            }
-          }
-        }
-
-        // 4) If still missing, default to NIL
-        const finalVal = normalized[hospitalField];
-        if (finalVal === null || finalVal === undefined || finalVal === "") {
-          normalized[hospitalField] = "NIL";
-          console.log(`Defaulted "${hospitalField}" to NIL`);
-        }
-      }
+    } catch (formatError) {
+      console.error(`[${new Date().toISOString()}] Error during formatting`, {
+        error: formatError instanceof Error ? formatError.message : 'Unknown error',
+        payerPlan,
+        ...logContext
+      });
+      // Continue with unformatted data rather than failing
     }
 
     // Log summary
@@ -745,17 +707,34 @@ export async function extractDataApi({
 
     return normalized;
   } catch (error) {
-    console.error("Extraction failed:", error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorStack = error instanceof Error ? error.stack : undefined;
     
-    // Track extraction failure
-    const errorMsg = error instanceof Error ? error.message : String(error);
-    trackExtractionEvent('extraction_failed', {
-      file_name: file.name,
-      file_size: file.size,
-      payer_plan: payerPlanName || 'unknown',
-      error_message: errorMsg,
-      extraction_time_ms: Date.now() - startTime,
+    console.error(`[${new Date().toISOString()}] Extraction error for ${file?.name || 'unknown'}:`, {
+      error: errorMessage,
+      stack: errorStack,
+      durationMs: Date.now() - startTime,
+      ...logContext
     });
+    
+    // Track the error in analytics
+    trackExtractionEvent('extraction_error', {
+      error: errorMessage,
+      payer_plan: payerPlan || 'unknown',
+      file_name: file?.name || 'unknown',
+      duration_seconds: (Date.now() - startTime) / 1000,
+    });
+    
+    // Log the error to our logging service
+    try {
+      await logExtraction(
+        file?.name || 'unknown',
+        'error',
+        `Error: ${errorMessage}\nStack: ${errorStack || 'No stack trace'}`
+      );
+    } catch (logError) {
+      console.error('Failed to log extraction error:', logError);
+    }
     
     throw error;
   } finally {
