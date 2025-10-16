@@ -21,12 +21,17 @@ const ensureLogsDir = async () => {
 const handler = async (event, context) => {
   console.log('--- New Request ---');
   
-  // Only allow POST requests
+  // Handle non-POST requests
   if (event.httpMethod !== 'POST') {
-    console.log('Method not allowed:', event.httpMethod);
+    console.log(`Method not allowed: ${event.httpMethod} ${event.path}`);
     return {
-      statusCode: 405,
-      body: JSON.stringify({ error: 'Method Not Allowed' })
+      statusCode: 200, // Return 200 for GET requests to avoid CORS issues
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        status: 'success',
+        message: 'Log extraction service is running',
+        usage: 'Send a POST request with { fileName: string, status: string, error?: string }'
+      })
     };
   }
 
@@ -54,16 +59,23 @@ const handler = async (event, context) => {
       })
     };
   } catch (error) {
-    console.error('Error in logExtraction:', {
+    const errorDetails = {
       message: error.message,
-      stack: error.stack,
-      event: event
-    });
+      code: error.code,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined,
+      path: event.path,
+      method: event.httpMethod
+    };
+    
+    console.error('Error in logExtraction:', JSON.stringify(errorDetails, null, 2));
+    
     return {
       statusCode: 500,
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ 
+        status: 'error',
         error: 'Failed to log extraction',
-        details: error.message
+        ...(process.env.NODE_ENV === 'development' && { details: errorDetails })
       })
     };
   }
