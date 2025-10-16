@@ -584,14 +584,7 @@ export async function extractDataApi({
   try {
     console.log(`[${logContext.timestamp}] Starting extraction for ${file.name}`, logContext);
     await logExtraction(file.name, 'started');
-  } catch (logError) {
-    console.error('Failed to log extraction start:', logError);
-  }
 
-  assertKey(apiKey);
-  const completionStart = Date.now();
-  let result;
-  try {
     // Track file upload start
     trackExtractionEvent('file_upload_started', {
       file_name: file.name,
@@ -600,55 +593,45 @@ export async function extractDataApi({
       payer_plan: payerPlanName || 'unknown',
     });
 
-    // 1) Upload file
+    // 1) Upload file to OpenAI
     const fileId = await uploadFileToOpenAI(file, apiKey);
+    console.log(`[${new Date().toISOString()}] File uploaded: ${fileId}`);
 
-    // Track successful file upload
-    trackExtractionEvent('file_upload_completed', {
-      file_name: file.name,
-      file_size: file.size,
-      payer_plan: payerPlanName || 'unknown',
-    });
-
-    // 2) Resolve fields
-    const resolvedFields = (fields && fields.length > 0)
-      ? fields
-      : (payerPlan ? FIELD_MAPPINGS[payerPlan] : []);
-    if (!resolvedFields || resolvedFields.length === 0) {
-      throw new Error("No fields provided to extract.");
-    }
+    // 2) Call API with file
+    const resolvedFields = fields || Object.keys(FIELD_MAPPINGS);
     const prompt = buildPrompt(
       resolvedFields,
       payerPlan ? FIELD_SUGGESTIONS[payerPlan] : undefined,
       payerPlan
     );
-    result = await createAssistantAndRun({ apiKey, fileId, prompt });
-
-    // 3) Parse JSON
-    const json = parseJsonOutput(result);
-
-    // Log what was found for debugging
-    console.log(`Extraction results for ${payerPlan}:`, json);
-    console.log(`Expected fields:`, resolvedFields);
-    console.log(`Found fields:`, Object.keys(json));
-    console.log(`File processed: ${file.name}, Size: ${file.size} bytes`);
-
-    // Count extracted fields
-    let foundFields = 0;
     
-    // Ensure all expected keys exist; fill missing with null
-    let normalized: ExtractedData = {};
-    for (const key of resolvedFields) {
-      const val = Object.prototype.hasOwnProperty.call(json, key) ? json[key] : null;
-      normalized[key] = val === undefined ? null : (val as string | null);
-      
-      if (val !== null && val !== undefined) {
+    const result = await createAssistantAndRun({ apiKey, fileId, prompt });
+
+    // 3) Parse JSON response
+    const json = parseJsonOutput(result);
+    console.log(`[${new Date().toISOString()}] Extraction results:`, json);
+
+    // 4) Normalize and validate extracted data
+    const normalized: ExtractedData = {};
+    let foundFields = 0;
+
+    for (const field of resolvedFields) {
+      const value = json[field];
+      if (value !== null && value !== undefined && value !== '') {
+        normalized[field] = value;
         foundFields++;
-      } else {
-        console.log(`Field "${key}" not found in extraction`);
       }
     }
-    
+
+    // 5) Apply payer plan specific formatting
+    if (payerPlan === PAYER_PLANS.QLM) {
+      console.log(`[${new Date().toISOString()}] Applying QLM formatting`);
+      formatQLMFields(normalized);
+    } else if (payerPlan === PAYER_PLANS.ALKOOT) {
+      console.log(`[${new Date().toISOString()}] Applying ALKOOT formatting`);
+      formatAlkootFields(normalized);
+    }
+
     // Track successful extraction
     const durationMs = Date.now() - startTime;
     const successContext = {
@@ -657,9 +640,9 @@ export async function extractDataApi({
       extractedFields: Object.keys(normalized).length,
       timestamp: new Date().toISOString()
     };
-  
+
     console.log(`[${successContext.timestamp}] Extraction completed successfully`, successContext);
-  
+
     // Log successful extraction
     try {
       await logExtraction(
@@ -674,7 +657,7 @@ export async function extractDataApi({
     } catch (logError) {
       console.error('Failed to log successful extraction:', logError);
     }
-  
+
     trackExtractionEvent('extraction_success', {
       payer_plan: payerPlan || 'unknown',
       file_name: file.name,
@@ -682,49 +665,28 @@ export async function extractDataApi({
       extracted_fields: successContext.extractedFields
     });
 
-    // Plan-specific post-processing logic
-    try {
-      if (payerPlan === PAYER_PLANS.QLM) {
-        console.log(`[${new Date().toISOString()}] Formatting for QLM plan`, logContext);
-        normalized = formatQLMFields(normalized);
-      } else if (payerPlan === PAYER_PLANS.ALKOOT) {
-        console.log(`[${new Date().toISOString()}] Formatting for Alkoot plan`, logContext);
-        normalized = formatAlkootFields(normalized);
-      }
-    } catch (formatError) {
-      console.error(`[${new Date().toISOString()}] Error during formatting`, {
-        error: formatError instanceof Error ? formatError.message : 'Unknown error',
-        payerPlan,
-        ...logContext
-      });
-      // Continue with unformatted data rather than failing
-    }
-
-    // Log summary
-    const foundCount = Object.values(normalized).filter(v => v !== null).length;
-    const totalCount = resolvedFields.length;
-    console.log(`Extraction summary: ${foundCount}/${totalCount} fields found`);
-
     return normalized;
+
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     const errorStack = error instanceof Error ? error.stack : undefined;
-    
+    const durationMs = Date.now() - startTime;
+
     console.error(`[${new Date().toISOString()}] Extraction error for ${file?.name || 'unknown'}:`, {
       error: errorMessage,
       stack: errorStack,
-      durationMs: Date.now() - startTime,
+      durationMs,
       ...logContext
     });
-    
+
     // Track the error in analytics
     trackExtractionEvent('extraction_error', {
       error: errorMessage,
       payer_plan: payerPlan || 'unknown',
       file_name: file?.name || 'unknown',
-      duration_seconds: (Date.now() - startTime) / 1000,
+      duration_seconds: durationMs / 1000,
     });
-    
+
     // Log the error to our logging service
     try {
       await logExtraction(
@@ -735,20 +697,8 @@ export async function extractDataApi({
     } catch (logError) {
       console.error('Failed to log extraction error:', logError);
     }
-    
+
     throw error;
-  } finally {
-    // Track overall extraction attempt
-    if (!success) {
-      trackExtractionEvent('extraction_attempted', {
-        file_name: file.name,
-        file_size: file.size,
-        payer_plan: payerPlanName || 'unknown',
-        success: false,
-        extraction_time_ms: Date.now() - startTime,
-        error_message: errorMessage,
-      });
-    }
   }
 }
 
