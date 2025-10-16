@@ -40,20 +40,46 @@ const ensureLogsDir = async () => {
   }
 };
 
+// CORS headers
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'Content-Type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS'
+};
+
 const handler = async (event, context) => {
-  console.log('--- New Request ---');
+  console.log(`[${new Date().toISOString()}] New Request: ${event.httpMethod} ${event.path}`);
+  
+  // Handle CORS preflight
+  if (event.httpMethod === 'OPTIONS') {
+    return {
+      statusCode: 204,
+      headers: {
+        ...corsHeaders,
+        'Content-Type': 'application/json'
+      },
+      body: ''
+    };
+  }
   
   // Handle non-POST requests
   if (event.httpMethod !== 'POST') {
-    console.log(`Method not allowed: ${event.httpMethod} ${event.path}`);
+    const response = {
+      status: 'success',
+      message: 'Log extraction service is running',
+      timestamp: new Date().toISOString(),
+      usage: 'Send a POST request with { fileName: string, status: string, error?: string }'
+    };
+    
+    console.log(`[${new Date().toISOString()}] Method not allowed: ${event.httpMethod}`, response);
+    
     return {
-      statusCode: 200, // Return 200 for GET requests to avoid CORS issues
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        status: 'success',
-        message: 'Log extraction service is running',
-        usage: 'Send a POST request with { fileName: string, status: string, error?: string }'
-      })
+      statusCode: 200,
+      headers: {
+        ...corsHeaders,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(response)
     };
   }
 
@@ -90,12 +116,24 @@ const handler = async (event, context) => {
       });
       throw writeErr;
     }
+    const response = {
+      status: 'success',
+      message: 'Extraction logged successfully',
+      timestamp: new Date().toISOString(),
+      logPath: logFilePath,
+      fileName,
+      status: status
+    };
+    
+    console.log(`[${new Date().toISOString()}] Success response:`, response);
+    
     return {
       statusCode: 200,
-      body: JSON.stringify({ 
-        message: 'Extraction logged successfully',
-        logPath: logFilePath
-      })
+      headers: {
+        ...corsHeaders,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(response)
     };
   } catch (error) {
     const errorDetails = {
@@ -108,14 +146,22 @@ const handler = async (event, context) => {
     
     console.error('Error in logExtraction:', JSON.stringify(errorDetails, null, 2));
     
+    const errorResponse = {
+      status: 'error',
+      error: 'Failed to log extraction',
+      timestamp: new Date().toISOString(),
+      ...(process.env.NODE_ENV === 'development' && { details: errorDetails })
+    };
+    
+    console.error(`[${new Date().toISOString()}] Error response:`, errorResponse);
+    
     return {
       statusCode: 500,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        status: 'error',
-        error: 'Failed to log extraction',
-        ...(process.env.NODE_ENV === 'development' && { details: errorDetails })
-      })
+      headers: {
+        ...corsHeaders,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(errorResponse)
     };
   }
 };
