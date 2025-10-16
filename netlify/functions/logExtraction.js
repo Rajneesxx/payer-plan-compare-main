@@ -4,16 +4,38 @@ const path = require('path');
 
 // Ensure logs directory exists
 const ensureLogsDir = async () => {
-  // Use /tmp/ directory which is writable in Netlify Functions
-  const logDir = path.join('/tmp', 'extraction-logs');
-  console.log('Ensuring log directory exists at:', logDir);
-  
   try {
-    await fs.mkdir(logDir, { recursive: true });
-    console.log('Log directory ready');
-    return path.join(logDir, 'extraction_logs.txt');
+    // Use /tmp/ directory which is writable in Netlify Functions
+    const logDir = path.join('/tmp', 'extraction-logs');
+    const logFile = path.join(logDir, 'extraction_logs.txt');
+    
+    console.log(`[${new Date().toISOString()}] Ensuring log directory exists at: ${logDir}`);
+    
+    try {
+      await fs.access(logDir);
+      console.log(`[${new Date().toISOString()}] Log directory already exists`);
+    } catch (err) {
+      console.log(`[${new Date().toISOString()}] Creating log directory`);
+      await fs.mkdir(logDir, { recursive: true });
+      console.log(`[${new Date().toISOString()}] Log directory created`);
+    }
+    
+    // Verify we can write to the directory
+    try {
+      await fs.access(logDir, fs.constants.W_OK);
+      console.log(`[${new Date().toISOString()}] Log directory is writable`);
+      return logFile;
+    } catch (err) {
+      const error = new Error(`Cannot write to log directory: ${logDir}`);
+      error.code = 'EACCES';
+      throw error;
+    }
   } catch (err) {
-    console.error('Error creating logs directory:', err);
+    console.error(`[${new Date().toISOString()}] Error in ensureLogsDir:`, {
+      message: err.message,
+      code: err.code,
+      stack: err.stack
+    });
     throw err;
   }
 };
@@ -41,16 +63,33 @@ const handler = async (event, context) => {
     
     const { fileName, status, error } = body;
     const logFilePath = await ensureLogsDir();
-    
     const timestamp = new Date().toISOString();
-    const logLine = error 
-      ? `${timestamp} | ${fileName} | ${status} | Error: ${error}\n`
-      : `${timestamp} | ${fileName} | ${status}\n`;
-
-    console.log('Writing log entry to:', logFilePath);
-    await fs.appendFile(logFilePath, logLine, 'utf8');
     
-    console.log('Successfully wrote to log file');
+    // Format log line with consistent timestamp format
+    const logLine = error 
+      ? `[${timestamp}] | ${fileName} | ${status} | Error: ${error}\n`
+      : `[${timestamp}] | ${fileName} | ${status}\n`;
+
+    console.log(`[${timestamp}] Attempting to write to log file: ${logFilePath}`);
+    
+    try {
+      await fs.appendFile(logFilePath, logLine, 'utf8');
+      console.log(`[${timestamp}] Successfully wrote to log file`);
+      
+      // Verify the write was successful
+      const stats = await fs.stat(logFilePath);
+      console.log(`[${timestamp}] Log file stats: ${JSON.stringify({
+        size: stats.size,
+        mtime: stats.mtime
+      })}`);
+    } catch (writeErr) {
+      console.error(`[${timestamp}] Failed to write to log file:`, {
+        message: writeErr.message,
+        code: writeErr.code,
+        path: logFilePath
+      });
+      throw writeErr;
+    }
     return {
       statusCode: 200,
       body: JSON.stringify({ 
