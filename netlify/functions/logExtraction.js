@@ -1,6 +1,20 @@
-// Netlify Function to log successful extractions
+// Netlify Function to log extractions
 const { promises: fs } = require('fs');
 const path = require('path');
+
+// Ensure logs directory exists
+const ensureLogsDir = async () => {
+  const logDir = path.join(__dirname, 'logs');
+  try {
+    await fs.mkdir(logDir, { recursive: true });
+  } catch (err) {
+    if (err.code !== 'EEXIST') {
+      console.error('Error creating logs directory:', err);
+      throw err;
+    }
+  }
+  return path.join(logDir, 'extraction_logs.txt');
+};
 
 exports.handler = async function(event, context) {
   // Only allow POST requests
@@ -12,38 +26,35 @@ exports.handler = async function(event, context) {
   }
 
   try {
-    const { fileName, status } = JSON.parse(event.body);
+    const { fileName, status, error } = JSON.parse(event.body);
+    const logFilePath = await ensureLogsDir();
     
-    // Only log successful extractions
-    if (status === 'success') {
-      const logDir = path.join(process.cwd(), 'logs');
-      const logFilePath = path.join(logDir, 'extraction_logs.txt');
+    const timestamp = new Date().toISOString();
+    const logLine = error 
+      ? `${timestamp} | ${fileName} | ${status} | Error: ${error}\n`
+      : `${timestamp} | ${fileName} | ${status}\n`;
 
-      // Create logs directory if it doesn't exist
-      try {
-        await fs.mkdir(logDir, { recursive: true });
-      } catch (err) {
-        if (err.code !== 'EEXIST') throw err;
-      }
-
-      const timestamp = new Date().toISOString();
-      const logLine = `${timestamp} | ${fileName} | ${status}\n`;
-
-      // Append to log file
-      await fs.appendFile(logFilePath, logLine, 'utf8');
-    }
+    // Append to log file
+    await fs.appendFile(logFilePath, logLine, 'utf8');
+    
+    console.log('Logged extraction:', { fileName, status, timestamp });
+    if (error) console.error('Error details:', error);
 
     return {
       statusCode: 200,
-      body: JSON.stringify({ message: 'Extraction logged successfully' })
+      body: JSON.stringify({ 
+        message: 'Extraction logged successfully',
+        logPath: logFilePath
+      })
     };
   } catch (error) {
-    console.error('Error logging extraction:', error);
+    console.error('Error in logExtraction function:', error);
     return {
       statusCode: 500,
       body: JSON.stringify({ 
         error: 'Failed to log extraction',
-        details: error.message 
+        details: error.message,
+        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
       })
     };
   }
