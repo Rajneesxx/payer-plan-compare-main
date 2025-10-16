@@ -1,14 +1,16 @@
+# netlify.toml
 [build]
-  command = "npm run build"
   publish = "dist"
-  functions = "netlify/functions"
-  [build.environment]
-    NODE_VERSION = "18.17.1"
+  command = "npm run build"
 
-[dev]
-  targetPort = 8080  # Add this line to match Vite's port
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
 
-[[redirects]]
-  from = "/api/*"
-  to = "/.netlify/functions/:splat"
-  status = 200
+# Add this to persist the logs directory between builds
+[[plugins]]
+  package = "@netlify/plugin-functions-output"
+  [plugins.inputs]
+    functions = ["logExtraction"]
+  [plugins.inputs.outputs]
+    logs = "./logs"
