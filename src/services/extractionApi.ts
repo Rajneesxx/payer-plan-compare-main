@@ -768,20 +768,6 @@ export async function extractDataApi({
         extraction_time_ms: Date.now() - startTime,
         error_message: errorMessage,
       });
-    const prompt = buildPrompt(
-      resolvedFields,
-      payerPlan ? FIELD_SUGGESTIONS[payerPlan] : undefined,
-      payerPlan
-    ) + "\n\nNote: Unable to process file attachment. Please provide the document content as text.";
-    const response = await callChatCompletion({ apiKey, prompt });
-    const json = parseJsonOutput(response);
-
-    const normalized: ExtractedData = {};
-    for (const key of resolvedFields) {
-      normalized[key] = null; // Set all to null since we can't process the file
-    }
-
-    return normalized;
   }
 }
 
