@@ -3,6 +3,27 @@
 import { FIELD_MAPPINGS, PAYER_PLANS, type PayerPlan, type ExtractedData, type ComparisonResult } from "@/constants/fields";
 import { FIELD_SUGGESTIONS } from "@/constants/fields";
 
+declare global {
+  interface Window {
+    gtag: (...args: any[]) => void;
+    dataLayer: any[];
+  }
+}
+
+// Track extraction event in GA4
+function trackExtractionEvent(
+  eventName: string,
+  params: Record<string, any>
+) {
+  if (typeof window !== 'undefined' && typeof window.gtag === 'function') {
+    window.gtag('event', eventName, {
+      ...params,
+      event_category: 'LLM Extraction',
+      non_interaction: false,
+    });
+  }
+}
+
 const OPENAI_BASE = "https://api.openai.com/v1";
 
 function assertKey(apiKey?: string) {
@@ -550,10 +571,29 @@ export async function extractDataApi({
   payerPlanName?: string;
 }): Promise<ExtractedData> {
   assertKey(apiKey);
+  const startTime = Date.now();
+  let success = false;
+  let errorMessage = '';
+  let extractedFields = 0;
 
   try {
+    // Track file upload start
+    trackExtractionEvent('file_upload_started', {
+      file_name: file.name,
+      file_size: file.size,
+      file_type: file.type,
+      payer_plan: payerPlanName || 'unknown',
+    });
+
     // 1) Upload file
     const fileId = await uploadFileToOpenAI(file, apiKey);
+
+    // Track successful file upload
+    trackExtractionEvent('file_upload_completed', {
+      file_name: file.name,
+      file_size: file.size,
+      payer_plan: payerPlanName || 'unknown',
+    });
 
     // 2) Resolve fields
     const resolvedFields = (fields && fields.length > 0)
@@ -578,17 +618,35 @@ export async function extractDataApi({
     console.log(`Found fields:`, Object.keys(json));
     console.log(`File processed: ${file.name}, Size: ${file.size} bytes`);
 
+    // Count extracted fields
+    let foundFields = 0;
+    
     // Ensure all expected keys exist; fill missing with null
     let normalized: ExtractedData = {};
     for (const key of resolvedFields) {
       const val = Object.prototype.hasOwnProperty.call(json, key) ? json[key] : null;
       normalized[key] = val === undefined ? null : (val as string | null);
       
-      // Log missing fields for debugging
-      if (val === null || val === undefined) {
+      if (val !== null && val !== undefined) {
+        foundFields++;
+      } else {
         console.log(`Field "${key}" not found in extraction`);
       }
     }
+    
+    extractedFields = foundFields;
+    
+    // Track successful extraction
+    success = true;
+    trackExtractionEvent('extraction_completed', {
+      file_name: file.name,
+      file_size: file.size,
+      payer_plan: payerPlanName || 'unknown',
+      fields_expected: resolvedFields.length,
+      fields_extracted: foundFields,
+      extraction_time_ms: Date.now() - startTime,
+      extraction_success_rate: (foundFields / resolvedFields.length) * 100,
+    });
 
     // Plan-specific post-processing logic
     if (payerPlan === PAYER_PLANS.QLM) {
@@ -686,13 +744,30 @@ export async function extractDataApi({
 
     return normalized;
   } catch (error) {
-    // Fallback: if assistants API fails, try with simple chat completion
-    // (This won't work with PDFs but provides a fallback)
-    console.warn("Assistants API failed, falling back to chat completion:", error);
+    console.error("Extraction failed:", error);
     
-    const resolvedFields = (fields && fields.length > 0)
-      ? fields
-      : (payerPlan ? FIELD_MAPPINGS[payerPlan] : []);
+    // Track extraction failure
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    trackExtractionEvent('extraction_failed', {
+      file_name: file.name,
+      file_size: file.size,
+      payer_plan: payerPlanName || 'unknown',
+      error_message: errorMsg,
+      extraction_time_ms: Date.now() - startTime,
+    });
+    
+    throw error;
+  } finally {
+    // Track overall extraction attempt
+    if (!success) {
+      trackExtractionEvent('extraction_attempted', {
+        file_name: file.name,
+        file_size: file.size,
+        payer_plan: payerPlanName || 'unknown',
+        success: false,
+        extraction_time_ms: Date.now() - startTime,
+        error_message: errorMessage,
+      });
     const prompt = buildPrompt(
       resolvedFields,
       payerPlan ? FIELD_SUGGESTIONS[payerPlan] : undefined,
