@@ -2,6 +2,7 @@
 // Minimal public surface retained: extractDataApi and compareDataApi
 import { FIELD_MAPPINGS, PAYER_PLANS, type PayerPlan, type ExtractedData, type ComparisonResult } from "@/constants/fields";
 import { FIELD_SUGGESTIONS } from "@/constants/fields";
+import { logExtraction } from "@/utils/logging";
 
 declare global {
   interface Window {
