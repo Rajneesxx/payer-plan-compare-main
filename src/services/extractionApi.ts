@@ -164,7 +164,7 @@ async function callChatCompletion(params: {
     ],
     response_format: { type: "json_object" },
     temperature: 0,
-    max_tokens: 10000,
+    max_tokens: 16000,
   };
 
   const res = await fetch(`${OPENAI_BASE}/chat/completions`, {
