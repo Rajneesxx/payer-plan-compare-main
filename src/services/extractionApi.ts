@@ -2,7 +2,6 @@
 // Minimal public surface retained: extractDataApi and compareDataApi
 import { FIELD_MAPPINGS, PAYER_PLANS, type PayerPlan, type ExtractedData, type ComparisonResult } from "@/constants/fields";
 import { FIELD_SUGGESTIONS } from "@/constants/fields";
-import { logExtraction } from "@/utils/logging";
 
 declare global {
   interface Window {
@@ -64,45 +63,105 @@ function buildPrompt(
       break;
     case PAYER_PLANS.ALKOOT:
       specificInstructions =
-        "\nALKOOT FORMAT RULES:\n" +
-        "- Extract exact percentages, amounts, and full text\n" +
-        "- Preserve content for Psychiatric, Optical, Dental, and Pregnancy fields\n" +
-        "- Keep QAR, %, and 'per policy year' units intact\n";
+        "\nALKOOT EXTRACTION RULES (CRITICAL):\n" +
+        "- 'Provider-specific co-insurance at Al Ahli Hospital': Extract COMPLETE coverage details including percentages, network info, and conditions (e.g., '100% actual or 85% R&C')\n" +
+        "- 'Co-insurance on all inpatient treatment': Extract full coverage statement with all percentages and conditions\n" +
+        "- 'Psychiatric treatment & Psychotherapy': Extract COMPLETE text including coverage amount, session limits, and all conditions\n" +
+        "- 'Vaccination & Immunization': Extract full amount and schedule reference\n" +
+        "- 'Pregnancy & Childbirth': Extract complete details including amount, waiting period, co-insurance, and deductible\n" +
+        "- 'Dental Benefit': Extract complete details including amount, co-insurance percentage, and deductible\n" +
+        "- 'Optical Benefit': Extract complete coverage details or 'Not covered' if applicable\n" +
+        "- 'Deductible on consultation': Extract exact deductible amount\n" +
+        "- NEVER truncate values. Extract the ENTIRE sentence or value from the PDF\n" +
+        "- If a field spans multiple lines, combine all lines into one complete value\n" +
+        "- Preserve all formatting: QAR, %, 'per policy year', commas, and special characters\n";
       break;
     default:
       break;
   }
 
   return (
-  "You are a precise information extraction engine capable of processing PDF documents, including scanned PDFs with OCR.\n" +
-    "Task: Extract the following fields from the attached PDF document.\n" +
-    "Rules for table-based extraction:\n" +
+    "You are a medical insurance policy extractor for detailed benefit tables and narrative policies. Using exhaustive, multi-pass searching, extract the most detailed value for every field in the list.\n" +
+    "\nCRITICAL EXTRACTION RULES:\n" +
+    "- EVERY field MUST have a value. Search EXHAUSTIVELY and AGGRESSIVELY before returning null.\n" +
+    "- Extract COMPLETE, UNTRUNCATED values - include ALL details, conditions, qualifications, and context.\n" +
+    "- NEVER return 'Nil' or empty values - if you find 'Nil', search for the actual value elsewhere in the document.\n" +
+    "- For each field, extract the MOST COMPLETE version found in the document.\n" +
+    "- Return JSON only (no prose or explanations).\n" +
+    "- Use EXACT keys from the field list below.\n" +
+    "- Only set a field to null if it is ABSOLUTELY not present in the document after exhaustive search.\n" +
+    "\nMULTI-PASS EXTRACTION STRATEGY:\n" +
+    "1. FIRST PASS - Table Scanning:\n" +
+    "   - Scan ALL tables in the document (main tables, benefit tables, summary tables, appendices)\n" +
+    "   - For each requested field, search for exact matches and variations in table headers and first columns\n" +
+    "   - Extract complete row content when field is found\n" +
+    "   - Note: 'Table of Benefits', 'Schedule of Benefits', 'Coverage Table', etc.\n" +
+    "\n2. SECOND PASS - Paragraph & Narrative Scanning:\n" +
+    "   - Scan all narrative sections, policy descriptions, and paragraphs\n" +
+    "   - Search for field names and related keywords in full sentences\n" +
+    "   - Extract complete sentences containing the field information\n" +
+    "\n3. THIRD PASS - Footnotes, Exclusions & Special Sections:\n" +
+    "   - Check footnotes, exclusions, conditions, and special notes\n" +
+    "   - Search for additional context or clarifications about fields\n" +
+    "   - Look for 'as per', 'refer to', 'see Table' references and expand them\n" +
+    "\n4. FOURTH PASS - Reference Resolution:\n" +
+    "   - If a field refers to 'as per Table of Benefits' or similar, FETCH that table\n" +
+    "   - EXPAND all referenced sections with complete details\n" +
+    "   - Merge all related information into one comprehensive value\n" +
+    "\nCOMPLETE VALUE EXTRACTION REQUIREMENTS:\n" +
+    "- Extract the entire, untruncated value, even if spread across lines or sentences\n" +
+    "- Merge together all related details, including conditions, percentages, amounts, session limits, waiting periods, and exceptions\n" +
+    "- NEVER infer or summarize; return only explicit, complete quoted values as they appear\n" +
+    "- For co-insurance, deductible, optical, dental, pregnancy, psychiatric, and provider-specific rules, ensure ALL subpoints and conditions are captured\n" +
+    "- Preserve QAR, %, units, and formatting exactly as shown in the source document\n" +
+    "- If a value is missing or only marked as 'not covered', continue searching all exclusions, footnotes, and summary tables for additional context before marking as null\n" +
+    "\nFIELD SYNONYM & VARIATION HANDLING:\n" +
+    "- Check for field synonyms and merge into main extraction key\n" +
+    "- Search for field names that are SIMILAR or RELATED to the requested fields\n" +
+    "- Check for variations, abbreviations, synonyms, and alternative phrasings\n" +
+    "- Example: 'Psychiatric Treatment' may also appear as 'Mental Health', 'Psychiatry', 'Psychological Treatment'\n" +
+    "- Example: 'Co-insurance' may appear as 'Coinsurance', 'Co insurance', 'Patient co-insurance'\n" +
+    "- Merge all variations into a single, most complete value for the requested field\n" +
+    "\nREFERENCE TABLE EXPANSION:\n" +
+    "- If the field or coverage refers only by an internal note (e.g. 'as per Table of Benefits'), fetch the referenced table section and expand all relevant limits or rules\n" +
+    "- Extract COMPLETE table row content when field name is found\n" +
+    "- Combine all parts into one complete value\n" +
+    "\nCITATION MARKER CLEANING:\n" +
+    "- Remove all citation markers in formats like: 【4:16†source】, [4:16†source], {4:16†source}\n" +
+    "- Clean extracted values before returning JSON\n" +
+    "- Ensure all values are clear and readable without reference markers\n" +
+    "\nRules for table-based extraction:\n" +
     "- When extracting from tables, identify the target field name in the first column\n" +
     "- Return ONLY the text from the next column of the same row, exactly as it appears\n" +
     "- If the next column is empty, return 'No data'\n" +
     "- Do not include any descriptive text from the field name column\n" +
     "- Preserve all formatting, including punctuation, case, and special characters\n" +
-    "\nGeneral extraction rules:\n" +
-    "- Return JSON only (no prose or explanations).\n" +
-    "- Use EXACT keys from the field list below.\n" +
-    "- If a field is not clearly present in the document, set its value to null.\n" +
-    "- Look for field names that are SIMILAR or RELATED to the requested fields.\n" +
-    "- Check for variations, abbreviations, and alternative phrasings.\n" +
-    "- Search in tables, headers, paragraphs, and any text content.\n" +
-    "- For medical insurance documents, look for:\n" +
-    "  * Deductibles, co-pays, co-insurance percentages\n" +
-    "  * Coverage limits and percentages\n" +
-    "  * Hospital-specific benefits\n" +
-    "  * Policy numbers, dates, and plan details\n" +
-    "- Prefer the most explicit value near labels, tables, or key-value pairs.\n" +
-    "- Do not invent data.\n" +
-    "- Normalize whitespace and remove unnecessary line breaks.\n" +
-    "- Preserve units, punctuation, and formatting from the source where applicable.\n" +
+    "- Check multiple tables if present\n" +
+    "\nAGGRESSIVE EXTRACTION RULES:\n" +
+    "- AGGRESSIVELY search for each field name and its variations across the ENTIRE document.\n" +
+    "- For each field, extract the COMPLETE associated value, including all qualifications and conditions.\n" +
+    "- Search strategy: Look in tables FIRST, then paragraphs, then footnotes, then any other text.\n" +
+    "- For table-based fields: Extract the ENTIRE row content if field name is found.\n" +
+    "- For paragraph-based fields: Extract the COMPLETE sentence(s) containing the field name.\n" +
+    "- For medical insurance documents, AGGRESSIVELY look for:\n" +
+    "  * Hospital-specific coverage details (percentages, conditions, network info)\n" +
+    "  * Treatment-specific coverage with ALL details (amounts, limits, conditions)\n" +
+    "  * Co-insurance percentages with network/provider qualifications\n" +
+    "  * Deductibles with consultation/treatment type specifications\n" +
+    "  * Coverage amounts with waiting periods, co-insurance, and deductible info\n" +
+    "- CRITICAL: Extract the FULL context around each field, not just the first value found.\n" +
+    "- If a value appears in multiple places, extract the MOST COMPLETE version.\n" +
+    "- Do not invent data - only extract what is explicitly stated in the document.\n" +
+    "- Normalize whitespace and remove unnecessary line breaks WITHIN values.\n" +
+    "- Preserve ALL units, punctuation, percentages, and formatting from the source.\n" +
+    "- Extract complete sentences or values, NEVER fragments or partial information.\n" +
+    "- If field value spans multiple lines or sections, COMBINE all parts into one complete value.\n" +
     specificInstructions +
     "\n\nFields to extract (keys must match exactly):\n" +
     `${fieldList}\n\n` +
     hintsSection +
-    "Analyze the attached PDF and output strictly JSON only."
+    "IMPORTANT: Ensure ALL fields are extracted with ACTUAL, COMPLETE values from the document.\n" +
+    "Return complete JSON object with all keys. Analyze the attached PDF and output strictly JSON only."
   );
 }
 
@@ -164,7 +223,7 @@ async function callChatCompletion(params: {
     ],
     response_format: { type: "json_object" },
     temperature: 0,
-    max_tokens: 16000,
+    max_tokens: 10000,
   };
 
   const res = await fetch(`${OPENAI_BASE}/chat/completions`, {
@@ -577,11 +636,6 @@ export async function extractDataApi({
   let errorMessage = '';
   let extractedFields = 0;
 
-  // Log extraction start
-  await logExtraction(file.name, 'started').catch(err => 
-    console.error('Failed to log extraction start:', err)
-  );
-
   try {
     // Track file upload start
     trackExtractionEvent('file_upload_started', {
@@ -626,10 +680,9 @@ export async function extractDataApi({
 
     // Count extracted fields
     let foundFields = 0;
-    let normalized: ExtractedData = {};
-    const missingFields: string[] = [];
     
     // Ensure all expected keys exist; fill missing with null
+    let normalized: ExtractedData = {};
     for (const key of resolvedFields) {
       const val = Object.prototype.hasOwnProperty.call(json, key) ? json[key] : null;
       normalized[key] = val === undefined ? null : (val as string | null);
@@ -637,18 +690,11 @@ export async function extractDataApi({
       if (val !== null && val !== undefined) {
         foundFields++;
       } else {
-        missingFields.push(key);
         console.log(`Field "${key}" not found in extraction`);
       }
     }
     
     extractedFields = foundFields;
-    const extractionTime = Date.now() - startTime;
-    
-    // Log extraction success with details
-    if (missingFields.length > 0) {
-      console.warn(`Missing ${missingFields.length} fields:`, missingFields);
-    }
     
     // Track successful extraction
     success = true;
@@ -658,15 +704,9 @@ export async function extractDataApi({
       payer_plan: payerPlanName || 'unknown',
       fields_expected: resolvedFields.length,
       fields_extracted: foundFields,
-      extraction_time_ms: extractionTime,
+      extraction_time_ms: Date.now() - startTime,
       extraction_success_rate: (foundFields / resolvedFields.length) * 100,
     });
-
-    // Log successful extraction
-    await logExtraction(
-      `${file.name} - Success: ${foundFields}/${resolvedFields.length} fields extracted in ${extractionTime}ms`,
-      'success'
-    ).catch(err => console.error('Failed to log extraction success:', err));
 
     // Plan-specific post-processing logic
     if (payerPlan === PAYER_PLANS.QLM) {
@@ -691,13 +731,29 @@ export async function extractDataApi({
       // Log provider-specific co-insurance source for debugging
       if (normalized[providerSpecific]) {
         console.log(`Provider-specific co-insurance source: ${normalized[providerSpecific]}`);
+        console.log(`Data source validation: Checking if this comes from PDF or fallback logic`);
         
         // Check if this field was found directly in the PDF or came from fallback
         const originalValue = Object.prototype.hasOwnProperty.call(json, providerSpecific) ? json[providerSpecific] : null;
         if (originalValue) {
-          console.log(`✓ Provider-specific co-insurance found directly in PDF`);
+          console.log(`✓ Provider-specific co-insurance found directly in PDF: "${originalValue}"`);
         } else {
-          console.log(`⚠ Using fallback value for provider-specific co-insurance`);
+          console.log(`⚠ Provider-specific co-insurance not found in PDF, using fallback logic`);
+        }
+      } else {
+        console.warn(`❌ Provider-specific co-insurance at Al Ahli Hospital not found in PDF or fallback`);
+      }
+      
+      // Ensure psychiatric treatment includes full content
+      if (normalized[psychiatricField]) {
+        const psychiatricValue = normalized[psychiatricField] as string;
+        console.log(`Psychiatric treatment content length: ${psychiatricValue.length} characters`);
+        // Ensure it includes "In patient" and "rejection" details if they exist in source
+        if (!psychiatricValue.toLowerCase().includes("inpatient") && !psychiatricValue.toLowerCase().includes("in patient")) {
+          console.warn('Psychiatric treatment may be missing "In patient" details');
+        }
+        if (!psychiatricValue.toLowerCase().includes("rejection")) {
+          console.warn('Psychiatric treatment may be missing "rejection" details');
         }
       }
       
@@ -706,25 +762,37 @@ export async function extractDataApi({
       console.log('Applied Alkoot-specific formatting');
     }
 
-    // Special handling for QLM specific fields
     if (payerPlan === PAYER_PLANS.QLM) {
       const hospitalField = "For Eligible Medical Expenses at Al Ahli Hospital";
       const current = normalized[hospitalField];
       if (current === null || current === "") {
-        // Try to find the value using various methods
+        // 1) Try direct/fuzzy/hints based extraction
         const hints = FIELD_SUGGESTIONS[PAYER_PLANS.QLM]?.[hospitalField] || [];
         const fromSimilar = tryValueFromSimilarKeys(json, hospitalField, hints);
-        
         if (fromSimilar) {
           normalized[hospitalField] = fromSimilar;
+          console.log(`Filled "${hospitalField}" via similar key lookup:`, fromSimilar);
         } else {
-          // Fall back to general co-insurance/coverage
-          const general = findGeneralCoinsuranceOrCoverage(json);
-          if (general) {
-            normalized[hospitalField] = general;
+          // 2) Try hospital-specific heuristic
+          const inferred = findHospitalSpecificCoverage(json);
+          if (inferred) {
+            normalized[hospitalField] = inferred;
+            console.log(`Heuristically inferred "${hospitalField}" from raw JSON key(s):`, inferred);
           } else {
-            normalized[hospitalField] = "NIL";
+            // 3) Fall back to general co-insurance/coverage
+            const general = findGeneralCoinsuranceOrCoverage(json);
+            if (general) {
+              normalized[hospitalField] = general;
+              console.log(`Defaulted "${hospitalField}" from general coverage/co-insurance:`, general);
+            }
           }
+        }
+
+        // 4) If still missing, default to NIL
+        const finalVal = normalized[hospitalField];
+        if (finalVal === null || finalVal === undefined || finalVal === "") {
+          normalized[hospitalField] = "NIL";
+          console.log(`Defaulted "${hospitalField}" to NIL`);
         }
       }
     }
@@ -732,17 +800,14 @@ export async function extractDataApi({
     // Log summary
     const foundCount = Object.values(normalized).filter(v => v !== null).length;
     const totalCount = resolvedFields.length;
-    const summary = `Extraction summary: ${foundCount}/${totalCount} fields found`;
-    console.log(summary);
+    console.log(`Extraction summary: ${foundCount}/${totalCount} fields found`);
 
     return normalized;
   } catch (error) {
     console.error("Extraction failed:", error);
     
-    const errorMsg = error instanceof Error ? error.message : String(error);
-    errorMessage = errorMsg;
-    
     // Track extraction failure
+    const errorMsg = error instanceof Error ? error.message : String(error);
     trackExtractionEvent('extraction_failed', {
       file_name: file.name,
       file_size: file.size,
@@ -751,34 +816,18 @@ export async function extractDataApi({
       extraction_time_ms: Date.now() - startTime,
     });
     
-    // Log extraction error
-    await logExtraction(
-      `${file.name} - Error: ${errorMsg}`,
-      'error',
-      errorMsg
-    ).catch(err => console.error('Failed to log extraction error:', err));
-    
     throw error;
   } finally {
-    const extractionTime = Date.now() - startTime;
-    
-    // Track overall extraction attempt if not already tracked
+    // Track overall extraction attempt
     if (!success) {
       trackExtractionEvent('extraction_attempted', {
         file_name: file.name,
         file_size: file.size,
         payer_plan: payerPlanName || 'unknown',
         success: false,
-        extraction_time_ms: extractionTime,
+        extraction_time_ms: Date.now() - startTime,
         error_message: errorMessage,
       });
-      
-      // Log failed extraction attempt
-      await logExtraction(
-        `${file.name} - Failed after ${extractionTime}ms`,
-        'error',
-        errorMessage || 'Unknown error'
-      ).catch(err => console.error('Failed to log failed extraction:', err));
     }
   }
 }
