@@ -161,6 +161,15 @@ function buildPrompt(
     `${fieldList}\n\n` +
     hintsSection +
     "IMPORTANT: Ensure ALL fields are extracted with ACTUAL, COMPLETE values from the document.\n" +
+    "\nVALUE FORMAT REQUIREMENT:\n" +
+    "- Extract ONLY the key values, NOT detailed explanations or descriptions\n" +
+    "- Example: For Dental Benefit, extract 'QAR 7,500, 20% co-insurance, nil deductible' NOT the full description about consultation, extraction, fillings, etc.\n" +
+    "- Example: For Psychiatric treatment, extract 'QAR 2,000 up to 20 sessions' NOT the detailed conditions about psychiatrist referral\n" +
+    "- Example: For Pregnancy & Childbirth, extract 'QAR 30,000, Nil waiting period, nil co-insurance, nil deductible' NOT the detailed maternity benefits description\n" +
+    "- Example: For Optical Benefit, extract 'Not covered' NOT any explanation\n" +
+    "- Example: For Vaccination & Immunization, extract 'QAR 1,000 as per MOPH schedule of vaccinations' NOT the detailed description of what is covered\n" +
+    "- Keep values concise: amounts, percentages, limits, waiting periods, deductibles only\n" +
+    "- Omit lengthy explanations about what the benefit covers or conditions of treatment\n" +
     "Return complete JSON object with all keys. Analyze the attached PDF and output strictly JSON only."
   );
 }
