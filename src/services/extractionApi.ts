@@ -37,8 +37,9 @@ function buildPrompt(
   const safeFields = Array.isArray(fields) ? fields : [];
   const fieldList = safeFields.map((f) => `- ${f}`).join("\n");
 
+  // For ALKOOT, disable fuzzy hints to avoid confusion
   let hintsSection = "";
-  if (fieldHints && typeof fieldHints === "object" && safeFields.length) {
+  if (fieldHints && typeof fieldHints === "object" && safeFields.length && payerPlan !== PAYER_PLANS.ALKOOT) {
     hintsSection =
       "\nFIELD SYNONYMS (search only; output keys must match exactly):\n" +
       safeFields
@@ -63,6 +64,45 @@ function buildPrompt(
       break;
     case PAYER_PLANS.ALKOOT:
       specificInstructions =
+        "\n=== ALKOOT STRICT EXTRACTION MODE ===\n" +
+        "RULE 1 - EXACT FIELD NAME MATCHING:\n" +
+        "- ONLY extract if the exact field name appears in the PDF\n" +
+        "- Do NOT use similar names, abbreviations, or variations\n" +
+        "- Do NOT use synonyms or related field names\n" +
+        "\nRULE 2 - NO INFERENCE OR ASSUMPTIONS:\n" +
+        "- Extract ONLY what is explicitly written\n" +
+        "- Do NOT infer values from context\n" +
+        "- Do NOT combine information from multiple fields\n" +
+        "- Do NOT use values from other fields even if related\n" +
+        "\nRULE 3 - COMPLETE AND EXACT VALUES:\n" +
+        "- Extract the COMPLETE value exactly as shown\n" +
+        "- Preserve all formatting: QAR, %, commas, parentheses\n" +
+        "- For multi-line values, combine into one continuous value\n" +
+        "- Remove ONLY citation markers like 【4:16†source】\n" +
+        "\nRULE 4 - NULL HANDLING:\n" +
+        "- Return null ONLY if field name is not found\n" +
+        "- If field shows 'Nil' or 'Not covered', return that as the value\n" +
+        "- Never return empty string, 'Not found', or 'Unknown'\n" +
+        "\nRULE 5 - SEARCH STRATEGY (PRIORITY ORDER):\n" +
+        "1. Search tables for EXACT field name in first column or headers\n" +
+        "2. If found, extract complete value from corresponding cell\n" +
+        "3. If not found in tables, search narrative text for EXACT field name\n" +
+        "4. If still not found, try SINGULAR/PLURAL variations:\n" +
+        "   - If field ends with 's', try removing it (e.g., 'Benefits' → 'Benefit')\n" +
+        "   - If field doesn't end with 's', try adding 's' (e.g., 'Benefit' → 'Benefits')\n" +
+        "   - Example: 'Vaccination & Immunization' could match 'Vaccination & Immunizations'\n" +
+        "   - Example: 'Dental Benefit' could match 'Dental Benefits'\n" +
+        "5. If singular/plural match found, extract that value\n" +
+        "6. If still not found anywhere, return null\n" +
+        "\nCRITICAL EXAMPLES:\n" +
+        "- Field: 'Provider-specific co-insurance at Al Ahli Hospital'\n" +
+        "  If NOT in PDF: return null (NOT the value of 'Co-insurance on all inpatient treatment')\n" +
+        "- Field: 'Psychiatric treatment & Psychotherapy'\n" +
+        "  Extract complete text with coverage amount and session limits\n" +
+        "- Field: 'Optical Benefit'\n" +
+        "  Extract exactly as shown: 'QAR 3,000..... per policy year' or 'Not covered'\n" +
+        "- Field: 'Vaccination & Immunization'\n" +
+        "  If not found, try 'Vaccination & Immunizations' (plural variant)\n";
         "\nALKOOT EXTRACTION RULES (STRICT EXACT MATCHING):\n" +
         "- Extract ONLY if field name appears EXACTLY in the PDF\n" +
         "- Do NOT use similar field names or variations\n" +
@@ -83,11 +123,15 @@ function buildPrompt(
   }
 
   return (
-    "You are a medical insurance policy extractor. Extract field values from the PDF with STRICT EXACT MATCHING.\n" +
-    "\nTASK: Extract the following fields from the attached PDF.\n" +
-    "Return ONLY values that are EXPLICITLY stated in the document.\n" +
-    "\nCRITICAL RULES:\n" +
-    "1. EXACT FIELD MATCHING: Field name must appear EXACTLY in the PDF\n" +
+    "You are a medical insurance policy extractor. Your task is to extract field values from PDFs with MAXIMUM ACCURACY.\n" +
+    "\nOVERALL EXTRACTION STRATEGY:\n" +
+    "1. Read the entire PDF carefully\n" +
+    "2. For each field, search ONLY for the exact field name\n" +
+    "3. Extract the complete, untruncated value\n" +
+    "4. Return null if field is not found\n" +
+    "5. Never hallucinate or infer values\n" +
+    "\nCRITICAL RULES (APPLY TO ALL PAYER PLANS):\n" +
+    "1. EXACT MATCHING: Field name must appear EXACTLY in the PDF\n" +
     "2. NO SYNONYMS: Do NOT use similar field names or variations\n" +
     "3. NO INFERENCE: Return null if field name is not found exactly\n" +
     "4. NO CROSS-FIELD USAGE: Do NOT use values from other fields\n" +
@@ -107,11 +151,11 @@ function buildPrompt(
     "- Do NOT use 'Co-insurance on all inpatient treatment' value for it\n" +
     "- Each field must have its own explicit value in the PDF\n" +
     "- If a field name does not appear exactly, return null\n" +
-    "\nVALUE HANDLING:\n" +
+      "\nVALUE HANDLING:\n" +
     "- If field shows 'Nil', 'Not covered', or 'Covered': Extract that as the value\n" +
     "- If field is genuinely not in document: Return null (not 'Not found', not empty string)\n" +
     "\nOUTPUT REQUIREMENTS:\n" +
-    "- Return valid JSON object only\n" +
+    "- Return ONLY valid JSON object\n" +
     "- Use exact field names as keys\n" +
     "- All values must be strings or null\n" +
     "- No explanations, no prose, no markdown\n" +
@@ -180,7 +224,8 @@ async function callChatCompletion(params: {
     ],
     response_format: { type: "json_object" },
     temperature: 0,
-    max_tokens: 10000,
+    top_p: 0.1,
+    max_tokens: 4000,
   };
 
   const res = await fetch(`${OPENAI_BASE}/chat/completions`, {
@@ -377,6 +422,67 @@ function parseJsonOutput(resp: any): Record<string, any> {
   }
 }
 
+function validateExtractedValue(value: string | null, fieldName: string): string | null {
+  if (value === null) return null;
+  
+  // Reject common hallucinations and placeholder text
+  const hallucinations = [
+    'not found',
+    'not specified',
+    'unknown',
+    'not available',
+    'n/a',
+    'na',
+    'none',
+    'not mentioned',
+    'not stated',
+    'not provided',
+    'not applicable',
+    'not defined',
+    'not given',
+    'not listed',
+    'not shown',
+    'not included',
+    'not covered',
+    'not applicable',
+    'tbd',
+    'to be determined',
+    'pending',
+    'under review'
+  ];
+  
+  const lowerValue = value.toLowerCase().trim();
+  
+  // Check for hallucinations
+  if (hallucinations.includes(lowerValue)) {
+    console.warn(`[VALIDATION] Field "${fieldName}" rejected - contains hallucination: "${value}"`);
+    return null;
+  }
+  
+  // Reject empty or whitespace-only values
+  if (!value.trim()) {
+    console.warn(`[VALIDATION] Field "${fieldName}" rejected - empty value`);
+    return null;
+  }
+  
+  // Reject values that are just punctuation
+  if (!/[a-zA-Z0-9]/.test(value)) {
+    console.warn(`[VALIDATION] Field "${fieldName}" rejected - no alphanumeric content: "${value}"`);
+    return null;
+  }
+  
+  return value;
+}
+
+function validateAllExtractedData(data: ExtractedData, fieldNames: string[]): ExtractedData {
+  const validated: ExtractedData = {};
+  for (const key of fieldNames) {
+    const value = data[key] || null;
+    validated[key] = validateExtractedValue(value, key);
+  }
+  return validated;
+}
+
 function findHospitalSpecificCoverage(json: Record<string, any>): string | null {
   try {
     const entries = Object.entries(json);
@@ -516,63 +622,6 @@ function formatAlkootFields(normalized: ExtractedData): ExtractedData {
   return result;
 }
 
-function tryValueFromSimilarKeys(
-  json: Record<string, any>,
-  targetField: string,
-  hints?: string[]
-): string | null {
-  const targetNorm = normalizeLabel(targetField);
-  const entries = Object.entries(json);
-
-  // 1) Exact key
-  if (Object.prototype.hasOwnProperty.call(json, targetField)) {
-    const val = json[targetField];
-    if (typeof val === "string" && val.trim().length > 0) return val.trim();
-  }
-
-  // 2) Hints list exact matches
-  if (hints && hints.length > 0) {
-    for (const hint of hints) {
-      if (Object.prototype.hasOwnProperty.call(json, hint)) {
-        const val = json[hint];
-        if (typeof val === "string" && val.trim().length > 0) return val.trim();
-      }
-    }
-  }
-
-  // Build normalized map of keys
-  const normKeyToOriginal: Record<string, string> = {};
-  for (const [k] of entries) {
-    if (typeof k !== "string") continue;
-    normKeyToOriginal[normalizeLabel(k)] = k;
-  }
-
-  // 3) Fuzzy: normalized includes/startsWith
-  for (const [normKey, origKey] of Object.entries(normKeyToOriginal)) {
-    if (
-      normKey === targetNorm ||
-      normKey.includes(targetNorm) ||
-      targetNorm.includes(normKey)
-    ) {
-      const val = json[origKey];
-      if (typeof val === "string" && val.trim().length > 0) return val.trim();
-    }
-  }
-
-  // 4) Fuzzy using individual hint tokens
-  if (hints && hints.length > 0) {
-    const normHints = hints.map(normalizeLabel);
-    for (const [normKey, origKey] of Object.entries(normKeyToOriginal)) {
-      const matchesAny = normHints.some((h) => normKey.includes(h) || h.includes(normKey));
-      if (matchesAny) {
-        const val = json[origKey];
-        if (typeof val === "string" && val.trim().length > 0) return val.trim();
-      }
-    }
-  }
-
-  return null;
-}
 
 export async function extractDataApi({
   file,
@@ -630,10 +679,12 @@ export async function extractDataApi({
     const json = parseJsonOutput(response);
 
     // Log what was found for debugging
-    console.log(`Extraction results for ${payerPlan}:`, json);
-    console.log(`Expected fields:`, resolvedFields);
-    console.log(`Found fields:`, Object.keys(json));
-    console.log(`File processed: ${file.name}, Size: ${file.size} bytes`);
+    console.log(`\n=== EXTRACTION DEBUG INFO ===`);
+    console.log(`Payer Plan: ${payerPlan}`);
+    console.log(`File: ${file.name} (${file.size} bytes)`);
+    console.log(`Expected fields (${resolvedFields.length}):`, resolvedFields);
+    console.log(`Extracted keys (${Object.keys(json).length}):`, Object.keys(json));
+    console.log(`Raw extraction results:`, json);
 
     // Count extracted fields
     let foundFields = 0;
@@ -646,10 +697,15 @@ export async function extractDataApi({
       
       if (val !== null && val !== undefined) {
         foundFields++;
+        console.log(`✓ "${key}": ${typeof val === 'string' ? val.substring(0, 80) : val}${typeof val === 'string' && val.length > 80 ? '...' : ''}`);
       } else {
-        console.log(`Field "${key}" not found in extraction`);
+        console.log(`✗ "${key}": NOT FOUND`);
       }
     }
+    
+    // Apply validation layer to catch hallucinations
+    console.log(`\n=== VALIDATION LAYER ===`);
+    normalized = validateAllExtractedData(normalized, resolvedFields);
     
     extractedFields = foundFields;
     
@@ -682,10 +738,17 @@ export async function extractDataApi({
 
     // No fallback logic - return values as extracted from PDF only
 
-    // Log summary
+    // Log final summary
     const foundCount = Object.values(normalized).filter(v => v !== null).length;
     const totalCount = resolvedFields.length;
-    console.log(`Extraction summary: ${foundCount}/${totalCount} fields found`);
+    const successRate = ((foundCount / totalCount) * 100).toFixed(1);
+    console.log(`\n=== EXTRACTION SUMMARY ===`);
+    console.log(`Fields found: ${foundCount}/${totalCount} (${successRate}%)`);
+    console.log(`Payer Plan: ${payerPlan}`);
+    console.log(`File: ${file.name}`);
+    console.log(`Processing time: ${Date.now() - startTime}ms`);
+    console.log(`Final extracted data:`, normalized);
+    console.log(`=== END EXTRACTION ===\n`);
 
     return normalized;
   } catch (error) {
