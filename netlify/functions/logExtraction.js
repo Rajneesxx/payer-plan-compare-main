@@ -1,64 +1,74 @@
-// Netlify Function to log extractions
-const { promises: fs } = require('fs');
+// netlify/functions/logExtraction.js
+const fs = require('fs');
 const path = require('path');
 
+// Use a persistent storage location for logs
+const LOG_DIR = path.join(process.cwd(), 'logs');
+const LOG_FILE = path.join(LOG_DIR, 'extraction_logs.txt');
+
 // Ensure logs directory exists
-const ensureLogsDir = async () => {
-  const logDir = path.join(__dirname, 'logs');
-  try {
-    await fs.mkdir(logDir, { recursive: true });
-  } catch (err) {
-    if (err.code !== 'EEXIST') {
-      console.error('Error creating logs directory:', err);
-      throw err;
-    }
+const ensureLogsDir = () => {
+  if (!fs.existsSync(LOG_DIR)) {
+    fs.mkdirSync(LOG_DIR, { recursive: true });
   }
-  return path.join(logDir, 'extraction_logs.txt');
+  if (!fs.existsSync(LOG_FILE)) {
+    fs.writeFileSync(LOG_FILE, '');
+  }
 };
 
+// Initialize logs directory
+ensureLogsDir();
+
 const handler = async (event, context) => {
-  // Only allow POST requests
+  // Handle CORS preflight
+  if (event.httpMethod === 'OPTIONS') {
+    return {
+      statusCode: 200,
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': 'Content-Type',
+        'Access-Control-Allow-Methods': 'POST, OPTIONS'
+      },
+      body: ''
+    };
+  }
+
   if (event.httpMethod !== 'POST') {
     return {
       statusCode: 405,
-      body: JSON.stringify({ error: 'Method Not Allowed' })
+      body: 'Method Not Allowed'
     };
   }
 
   try {
     const { fileName, status, error } = JSON.parse(event.body);
-    const logFilePath = await ensureLogsDir();
-    
     const timestamp = new Date().toISOString();
-    const logLine = error 
-      ? `${timestamp} | ${fileName} | ${status} | Error: ${error}\n`
-      : `${timestamp} | ${fileName} | ${status}\n`;
+    const logEntry = `[${timestamp}] ${status.toUpperCase()} - ${fileName}${error ? ` - ${error}` : ''}\n`;
 
     // Append to log file
-    await fs.appendFile(logFilePath, logLine, 'utf8');
-    
-    console.log('Logged extraction:', { fileName, status, timestamp });
-    if (error) console.error('Error details:', error);
+    fs.appendFileSync(LOG_FILE, logEntry);
 
     return {
       statusCode: 200,
-      body: JSON.stringify({ 
-        message: 'Extraction logged successfully',
-        logPath: logFilePath
-      })
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*'
+      },
+      body: JSON.stringify({ success: true, message: 'Log entry created' })
     };
   } catch (error) {
-    console.error('Error in logExtraction function:', error);
     return {
       statusCode: 500,
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*'
+      },
       body: JSON.stringify({ 
-        error: 'Failed to log extraction',
-        details: error.message,
-        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+        success: false, 
+        error: error.message 
       })
     };
   }
 };
 
-// Export the handler as required by Netlify
 module.exports = { handler };

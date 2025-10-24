@@ -37,8 +37,9 @@ function buildPrompt(
   const safeFields = Array.isArray(fields) ? fields : [];
   const fieldList = safeFields.map((f) => `- ${f}`).join("\n");
 
+  // For ALKOOT, disable fuzzy hints to avoid confusion
   let hintsSection = "";
-  if (fieldHints && typeof fieldHints === "object" && safeFields.length) {
+  if (fieldHints && typeof fieldHints === "object" && safeFields.length && payerPlan !== PAYER_PLANS.ALKOOT) {
     hintsSection =
       "\nFIELD SYNONYMS (search only; output keys must match exactly):\n" +
       safeFields
@@ -63,49 +64,84 @@ function buildPrompt(
       break;
     case PAYER_PLANS.ALKOOT:
       specificInstructions =
-        "\nALKOOT FORMAT RULES:\n" +
-        "- Extract exact percentages, amounts, and full text\n" +
-        "- Preserve content for Psychiatric, Optical, Dental, and Pregnancy fields\n" +
-        "- Keep QAR, %, and 'per policy year' units intact\n";
+        "\n=== ALKOOT STRICT EXTRACTION MODE ===\n" +
+        "RULE 1 - EXACT FIELD NAME MATCHING:\n" +
+        "- ONLY extract if the exact field name appears in the PDF\n" +
+        "- Do NOT use similar names, abbreviations, or variations\n" +
+        "- Do NOT use synonyms or related field names\n" +
+        "\nRULE 2 - NO INFERENCE OR ASSUMPTIONS:\n" +
+        "- Extract ONLY what is explicitly written\n" +
+        "- Do NOT infer values from context\n" +
+        "- Do NOT combine information from multiple fields\n" +
+        "- Do NOT use values from other fields even if related\n" +
+        "\nRULE 3 - COMPLETE AND EXACT VALUES:\n" +
+        "- Extract the COMPLETE value exactly as shown\n" +
+        "- Preserve all formatting: QAR, %, commas, parentheses\n" +
+        "- For multi-line values, combine into one continuous value\n" +
+        "- Remove ONLY citation markers like 【4:16†source】\n" +
+        "\nRULE 4 - NULL HANDLING:\n" +
+        "- Return null ONLY if field name is not found\n" +
+        "- If field shows 'Nil' or 'Not covered', return that as the value\n" +
+        "- Never return empty string, 'Not found', or 'Unknown'\n" +
+        "\nRULE 5 - SEARCH STRATEGY (PRIORITY ORDER):\n" +
+        "1. Search tables for EXACT field name in first column or headers\n" +
+        "2. If found, extract complete value from corresponding cell\n" +
+        "3. If not found in tables, search narrative text for EXACT field name\n" +
+        "4. If still not found, try SINGULAR/PLURAL variations:\n" +
+        "   - If field ends with 's', try removing it (e.g., 'Benefits' → 'Benefit')\n" +
+        "   - If field doesn't end with 's', try adding 's' (e.g., 'Benefit' → 'Benefits')\n" +
+        "   - Example: 'Vaccination & Immunization' could match 'Vaccination & Immunizations'\n" +
+        "   - Example: 'Dental Benefit' could match 'Dental Benefits'\n" +
+        "5. If singular/plural match found, extract that value\n" +
+        "6. If still not found anywhere, return null\n" +
+        "\nCRITICAL EXAMPLES:\n" +
+        "- Field: 'Provider-specific co-insurance at Al Ahli Hospital'\n" +
+        "  If NOT in PDF: return null (NOT the value of 'Co-insurance on all inpatient treatment')\n" +
+        "- Field: 'Psychiatric treatment & Psychotherapy'\n" +
+        "  Extract complete text with coverage amount and session limits\n" +
+        "- Field: 'Optical Benefit'\n" +
+        "  Extract exactly as shown: 'QAR 3,000..... per policy year' or 'Not covered'\n" +
+        "- Field: 'Vaccination & Immunization'\n" +
+        "  If not found, try 'Vaccination & Immunizations' (plural variant)\n";
       break;
     default:
       break;
   }
 
   return (
-  "You are a precise information extraction engine capable of processing PDF documents, including scanned PDFs with OCR.\n" +
-    "Task: Extract the following fields from the attached PDF document.\n" +
-    "Rules for table-based extraction:\n" +
-    "- When extracting from tables, identify the target field name in the first column\n" +
-    "- Return ONLY the text from the next column of the same row, exactly as it appears\n" +
-    "- If the next column is empty, return 'No data'\n" +
-    "- Do not include any descriptive text from the field name column\n" +
-    "- Preserve all formatting, including punctuation, case, and special characters\n" +
-    "\nGeneral extraction rules:\n" +
-    "- Return JSON only (no prose or explanations).\n" +
-    "- Use EXACT keys from the field list below.\n" +
-    "- If a field is not clearly present in the document, set its value to null.\n" +
-    "- Look for field names that are SIMILAR or RELATED to the requested fields.\n" +
-    "- Check for variations, abbreviations, and alternative phrasings.\n" +
-    "- Search in tables, headers, paragraphs, and any text content.\n" +
-    "- For medical insurance documents, look for:\n" +
-    "  * Deductibles, co-pays, co-insurance percentages\n" +
-    "  * Coverage limits and percentages\n" +
-    "  * Hospital-specific benefits\n" +
-    "  * Policy numbers, dates, and plan details\n" +
-    "- Prefer the most explicit value near labels, tables, or key-value pairs.\n" +
-    "- Do not invent data.\n" +
-    "- Normalize whitespace and remove unnecessary line breaks.\n" +
-    "- Preserve units, punctuation, and formatting from the source where applicable.\n" +
+    "You are a medical insurance policy extractor. Your task is to extract field values from PDFs with MAXIMUM ACCURACY.\n" +
+    "\nOVERALL EXTRACTION STRATEGY:\n" +
+    "1. Read the entire PDF carefully\n" +
+    "2. For each field, search ONLY for the exact field name\n" +
+    "3. Extract the complete, untruncated value\n" +
+    "4. Return null if field is not found\n" +
+    "5. Never hallucinate or infer values\n" +
+    "\nCRITICAL RULES (APPLY TO ALL PAYER PLANS):\n" +
+    "1. EXACT MATCHING: Field name must appear EXACTLY in the PDF\n" +
+    "2. NO SYNONYMS: Do NOT use similar field names or variations\n" +
+    "3. NO INFERENCE: Return null if field name is not found exactly\n" +
+    "4. NO CROSS-FIELD USAGE: Do NOT use values from other fields\n" +
+    "5. COMPLETE VALUES: Include all details - amounts, percentages, conditions\n" +
+    "6. PRESERVE FORMAT: Keep QAR, %, dates, commas exactly as shown\n" +
+    "7. MULTI-LINE: If value spans multiple lines, combine into one continuous value\n" +
+    "8. CLEAN CITATIONS: Remove citation markers like 【4:16†source】, [4:16†source], {4:16†source}\n" +
+    "9. SINGULAR/PLURAL FALLBACK: If exact field not found, try singular/plural variants\n" +
+    "\nVALUE HANDLING:\n" +
+    "- If field shows 'Nil', 'Not covered', or 'Covered': Extract that as the value\n" +
+    "- If field is genuinely not in document: Return null (not 'Not found', not empty string)\n" +
+    "\nOUTPUT REQUIREMENTS:\n" +
+    "- Return ONLY valid JSON object\n" +
+    "- Use exact field names as keys\n" +
+    "- All values must be strings or null\n" +
+    "- No explanations, no prose, no markdown\n" +
     specificInstructions +
     "\n\nFields to extract (keys must match exactly):\n" +
     `${fieldList}\n\n` +
     hintsSection +
-    "Analyze the attached PDF and output strictly JSON only."
+    "Return JSON object with all fields. Extract ONLY exact matches from the PDF.\n" +
+    "Output JSON only."
   );
 }
-
-
 
 async function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -163,7 +199,8 @@ async function callChatCompletion(params: {
     ],
     response_format: { type: "json_object" },
     temperature: 0,
-    max_tokens: 10000,
+    top_p: 0.1,
+    max_tokens: 4000,
   };
 
   const res = await fetch(`${OPENAI_BASE}/chat/completions`, {
@@ -360,6 +397,67 @@ function parseJsonOutput(resp: any): Record<string, any> {
   }
 }
 
+function validateExtractedValue(value: string | null, fieldName: string): string | null {
+  if (value === null) return null;
+  
+  // Reject common hallucinations and placeholder text
+  const hallucinations = [
+    'not found',
+    'not specified',
+    'unknown',
+    'not available',
+    'n/a',
+    'na',
+    'none',
+    'not mentioned',
+    'not stated',
+    'not provided',
+    'not applicable',
+    'not defined',
+    'not given',
+    'not listed',
+    'not shown',
+    'not included',
+    'not covered',
+    'not applicable',
+    'tbd',
+    'to be determined',
+    'pending',
+    'under review'
+  ];
+  
+  const lowerValue = value.toLowerCase().trim();
+  
+  // Check for hallucinations
+  if (hallucinations.includes(lowerValue)) {
+    console.warn(`[VALIDATION] Field "${fieldName}" rejected - contains hallucination: "${value}"`);
+    return null;
+  }
+  
+  // Reject empty or whitespace-only values
+  if (!value.trim()) {
+    console.warn(`[VALIDATION] Field "${fieldName}" rejected - empty value`);
+    return null;
+  }
+  
+  // Reject values that are just punctuation
+  if (!/[a-zA-Z0-9]/.test(value)) {
+    console.warn(`[VALIDATION] Field "${fieldName}" rejected - no alphanumeric content: "${value}"`);
+    return null;
+  }
+  
+  return value;
+}
+
+function validateAllExtractedData(data: ExtractedData, fieldNames: string[]): ExtractedData {
+  const validated: ExtractedData = {};
+  for (const key of fieldNames) {
+    const value = data[key] || null;
+    validated[key] = validateExtractedValue(value, key);
+  }
+  return validated;
+}
+
 function findHospitalSpecificCoverage(json: Record<string, any>): string | null {
   try {
     const entries = Object.entries(json);
@@ -499,63 +597,6 @@ function formatAlkootFields(normalized: ExtractedData): ExtractedData {
   return result;
 }
 
-function tryValueFromSimilarKeys(
-  json: Record<string, any>,
-  targetField: string,
-  hints?: string[]
-): string | null {
-  const targetNorm = normalizeLabel(targetField);
-  const entries = Object.entries(json);
-
-  // 1) Exact key
-  if (Object.prototype.hasOwnProperty.call(json, targetField)) {
-    const val = json[targetField];
-    if (typeof val === "string" && val.trim().length > 0) return val.trim();
-  }
-
-  // 2) Hints list exact matches
-  if (hints && hints.length > 0) {
-    for (const hint of hints) {
-      if (Object.prototype.hasOwnProperty.call(json, hint)) {
-        const val = json[hint];
-        if (typeof val === "string" && val.trim().length > 0) return val.trim();
-      }
-    }
-  }
-
-  // Build normalized map of keys
-  const normKeyToOriginal: Record<string, string> = {};
-  for (const [k] of entries) {
-    if (typeof k !== "string") continue;
-    normKeyToOriginal[normalizeLabel(k)] = k;
-  }
-
-  // 3) Fuzzy: normalized includes/startsWith
-  for (const [normKey, origKey] of Object.entries(normKeyToOriginal)) {
-    if (
-      normKey === targetNorm ||
-      normKey.includes(targetNorm) ||
-      targetNorm.includes(normKey)
-    ) {
-      const val = json[origKey];
-      if (typeof val === "string" && val.trim().length > 0) return val.trim();
-    }
-  }
-
-  // 4) Fuzzy using individual hint tokens
-  if (hints && hints.length > 0) {
-    const normHints = hints.map(normalizeLabel);
-    for (const [normKey, origKey] of Object.entries(normKeyToOriginal)) {
-      const matchesAny = normHints.some((h) => normKey.includes(h) || h.includes(normKey));
-      if (matchesAny) {
-        const val = json[origKey];
-        if (typeof val === "string" && val.trim().length > 0) return val.trim();
-      }
-    }
-  }
-
-  return null;
-}
 
 export async function extractDataApi({
   file,
@@ -613,10 +654,12 @@ export async function extractDataApi({
     const json = parseJsonOutput(response);
 
     // Log what was found for debugging
-    console.log(`Extraction results for ${payerPlan}:`, json);
-    console.log(`Expected fields:`, resolvedFields);
-    console.log(`Found fields:`, Object.keys(json));
-    console.log(`File processed: ${file.name}, Size: ${file.size} bytes`);
+    console.log(`\n=== EXTRACTION DEBUG INFO ===`);
+    console.log(`Payer Plan: ${payerPlan}`);
+    console.log(`File: ${file.name} (${file.size} bytes)`);
+    console.log(`Expected fields (${resolvedFields.length}):`, resolvedFields);
+    console.log(`Extracted keys (${Object.keys(json).length}):`, Object.keys(json));
+    console.log(`Raw extraction results:`, json);
 
     // Count extracted fields
     let foundFields = 0;
@@ -629,10 +672,15 @@ export async function extractDataApi({
       
       if (val !== null && val !== undefined) {
         foundFields++;
+        console.log(`✓ "${key}": ${typeof val === 'string' ? val.substring(0, 80) : val}${typeof val === 'string' && val.length > 80 ? '...' : ''}`);
       } else {
-        console.log(`Field "${key}" not found in extraction`);
+        console.log(`✗ "${key}": NOT FOUND`);
       }
     }
+    
+    // Apply validation layer to catch hallucinations
+    console.log(`\n=== VALIDATION LAYER ===`);
+    normalized = validateAllExtractedData(normalized, resolvedFields);
     
     extractedFields = foundFields;
     
@@ -655,92 +703,27 @@ export async function extractDataApi({
     }
     
     if (payerPlan === PAYER_PLANS.ALKOOT) {
-      const providerSpecific = "Provider-specific co-insurance at Al Ahli Hospital";
-      const generalInpatient = "Co-insurance on all inpatient treatment";
-      const psychiatricField = "Psychiatric treatment & Psychotherapy";
-      
-      const providerVal = normalized[providerSpecific];
-      const generalVal = normalized[generalInpatient];
-      
-      // Default provider-specific co-insurance if missing
-      if ((providerVal === null || providerVal === "") && (typeof generalVal === "string" && generalVal.trim().length > 0)) {
-        normalized[providerSpecific] = generalVal;
-        console.log(`Defaulted "${providerSpecific}" to value of "${generalInpatient}":`, generalVal);
-      }
-      
-      // Log provider-specific co-insurance source for debugging
-      if (normalized[providerSpecific]) {
-        console.log(`Provider-specific co-insurance source: ${normalized[providerSpecific]}`);
-        console.log(`Data source validation: Checking if this comes from PDF or fallback logic`);
-        
-        // Check if this field was found directly in the PDF or came from fallback
-        const originalValue = Object.prototype.hasOwnProperty.call(json, providerSpecific) ? json[providerSpecific] : null;
-        if (originalValue) {
-          console.log(`✓ Provider-specific co-insurance found directly in PDF: "${originalValue}"`);
-        } else {
-          console.log(`⚠ Provider-specific co-insurance not found in PDF, using fallback logic`);
-        }
-      } else {
-        console.warn(`❌ Provider-specific co-insurance at Al Ahli Hospital not found in PDF or fallback`);
-      }
-      
-      // Ensure psychiatric treatment includes full content
-      if (normalized[psychiatricField]) {
-        const psychiatricValue = normalized[psychiatricField] as string;
-        console.log(`Psychiatric treatment content length: ${psychiatricValue.length} characters`);
-        // Ensure it includes "In patient" and "rejection" details if they exist in source
-        if (!psychiatricValue.toLowerCase().includes("inpatient") && !psychiatricValue.toLowerCase().includes("in patient")) {
-          console.warn('Psychiatric treatment may be missing "In patient" details');
-        }
-        if (!psychiatricValue.toLowerCase().includes("rejection")) {
-          console.warn('Psychiatric treatment may be missing "rejection" details');
-        }
-      }
-      
       // Apply Alkoot-specific formatting
       normalized = formatAlkootFields(normalized);
       console.log('Applied Alkoot-specific formatting');
+      
+      // Log extraction results for debugging
+      console.log('Alkoot extraction results:', normalized);
     }
 
-    if (payerPlan === PAYER_PLANS.QLM) {
-      const hospitalField = "For Eligible Medical Expenses at Al Ahli Hospital";
-      const current = normalized[hospitalField];
-      if (current === null || current === "") {
-        // 1) Try direct/fuzzy/hints based extraction
-        const hints = FIELD_SUGGESTIONS[PAYER_PLANS.QLM]?.[hospitalField] || [];
-        const fromSimilar = tryValueFromSimilarKeys(json, hospitalField, hints);
-        if (fromSimilar) {
-          normalized[hospitalField] = fromSimilar;
-          console.log(`Filled "${hospitalField}" via similar key lookup:`, fromSimilar);
-        } else {
-          // 2) Try hospital-specific heuristic
-          const inferred = findHospitalSpecificCoverage(json);
-          if (inferred) {
-            normalized[hospitalField] = inferred;
-            console.log(`Heuristically inferred "${hospitalField}" from raw JSON key(s):`, inferred);
-          } else {
-            // 3) Fall back to general co-insurance/coverage
-            const general = findGeneralCoinsuranceOrCoverage(json);
-            if (general) {
-              normalized[hospitalField] = general;
-              console.log(`Defaulted "${hospitalField}" from general coverage/co-insurance:`, general);
-            }
-          }
-        }
+    // No fallback logic - return values as extracted from PDF only
 
-        // 4) If still missing, default to NIL
-        const finalVal = normalized[hospitalField];
-        if (finalVal === null || finalVal === undefined || finalVal === "") {
-          normalized[hospitalField] = "NIL";
-          console.log(`Defaulted "${hospitalField}" to NIL`);
-        }
-      }
-    }
-
-    // Log summary
+    // Log final summary
     const foundCount = Object.values(normalized).filter(v => v !== null).length;
     const totalCount = resolvedFields.length;
-    console.log(`Extraction summary: ${foundCount}/${totalCount} fields found`);
+    const successRate = ((foundCount / totalCount) * 100).toFixed(1);
+    console.log(`\n=== EXTRACTION SUMMARY ===`);
+    console.log(`Fields found: ${foundCount}/${totalCount} (${successRate}%)`);
+    console.log(`Payer Plan: ${payerPlan}`);
+    console.log(`File: ${file.name}`);
+    console.log(`Processing time: ${Date.now() - startTime}ms`);
+    console.log(`Final extracted data:`, normalized);
+    console.log(`=== END EXTRACTION ===\n`);
 
     return normalized;
   } catch (error) {

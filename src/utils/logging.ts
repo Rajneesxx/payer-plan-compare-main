@@ -1,32 +1,51 @@
-/**
- * Logs extraction events to a serverless function
- * @param fileName - Name of the extracted file
- * @param status - Status of the extraction ('success' or 'error')
- * @param error - Optional error details if status is 'error'
- */
+
 export async function logExtraction(
   fileName: string,
-  status: 'success' | 'error',
+  status: 'started' | 'success' | 'error',
   error?: string
-): Promise<void> {
+): Promise<{ success: boolean; message?: string }> {
+  const endpoint = '/.netlify/functions/logExtraction';
+  const timestamp = new Date().toISOString();
+  const requestBody = {
+    fileName,
+    status,
+    ...(error && { error }),
+    timestamp
+  };
+
   try {
-    const response = await fetch('/.netlify/functions/logExtraction', {
+    console.log(`[${timestamp}] Sending log request:`, JSON.stringify(requestBody, null, 2));
+    
+    const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        fileName,
-        status,
-        ...(error && { error }),
-        timestamp: new Date().toISOString()
-      }),
+      body: JSON.stringify(requestBody),
     });
 
+    const responseText = await response.text();
+    
     if (!response.ok) {
-      console.error('Failed to log extraction:', await response.text());
+      const errorMsg = `Failed to log extraction (${response.status}): ${responseText}`;
+      console.error(`[${timestamp}] ${errorMsg}`);
+      return { success: false, message: errorMsg };
+    }
+
+    try {
+      const data = responseText ? JSON.parse(responseText) : {};
+      console.log(`[${timestamp}] Log successful:`, data);
+      return { success: true, ...data };
+    } catch (parseError) {
+      console.error(`[${timestamp}] Failed to parse response:`, parseError);
+      return { 
+        success: false, 
+        message: 'Invalid response format from logging service' 
+      };
     }
   } catch (err) {
-    console.error('Error logging extraction:', err);
+    const errorMsg = `Error in logExtraction: ${err instanceof Error ? err.message : String(err)}`;
+    console.error(`[${timestamp}] ${errorMsg}`);
+    return { success: false, message: errorMsg };
   }
 }

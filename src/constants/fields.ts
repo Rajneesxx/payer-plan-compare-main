@@ -36,176 +36,78 @@ export const ALKOOT_FIELDS = [
   "Optical Benefit"
 ];
 
-// Field mapping suggestions to help users find similar field names
 export const FIELD_SUGGESTIONS = {
   [PAYER_PLANS.QLM]: {
     "Insured": [
-      "Policyholder",
-      "Member name",
-      "Insured person",
-      "Beneficiary name"
+    
     ],
     "Policy No": [
       "Policy number",
       "Policy ID",
       "Contract number",
-      "Policy reference"
     ],
     "Period of Insurance": [
       "Coverage period",
       "Insurance period",
-      "Policy term",
-      "Coverage dates"
+
     ],
     "Plan": [
       "Plan type",
-      "Coverage plan",
       "Plan name",
-      "Insurance plan"
+      "Insurance plan",
+      "PLANS"
     ],
     "For Eligible Medical Expenses at Al Ahli Hospital": [
-      "Al Ahli Hospital coverage",
-      "Hospital-specific benefits",
-      "Al Ahli medical expenses",
-      "Hospital coverage percentage",
-      "Al Ahli benefits"
+
     ],
     "Inpatient Deductible": [
-      "Hospital deductible",
-      "Inpatient excess",
-      "Hospital admission deductible",
-      "Inpatient excess amount",
-      "Hospital admission excess"
     ],
     "Deductible per each outpatient consultation": [
       "Outpatient deductible",
-      "Consultation excess",
-      "Outpatient excess",
-      "Per visit deductible",
-      "Consultation excess amount"
     ],
     "Vaccination of children": [
       "Child vaccination",
       "Vaccination coverage",
-      "Immunization for children",
-      "Child immunization"
     ],
     "Psychiatric Treatment": [
-      "Mental health coverage",
-      "Psychiatric care",
-      "Mental health treatment",
       "Psychiatry coverage"
     ],
     "Dental Copayment": [
-      "Dental co-pay",
-      "Dental excess",
-      "Dental coverage",
       "Dental benefits"
     ],
     "Maternity Copayment": [
-      "Maternity co-pay",
-      "Pregnancy coverage",
       "Maternity benefits",
       "Childbirth coverage"
     ],
     "Optical Copayment": [
-      "Optical co-pay",
-      "Vision coverage",
-      "Eye care benefits",
       "Optical benefits"
     ]
   },
   [PAYER_PLANS.ALKOOT]: {
-    "Policy Number": [
-      "Policy ID",
-      "Contract number",
-      "Policy reference",
-      "Policy no"
-    ],
-    "Category": [
-      "Plan category",
-      "Coverage category",
-      "Member category",
-      "Plan type"
-    ],
-    "Effective Date": [
-      "Start date",
-      "Coverage start",
-      "Policy start date",
-      "Effective from"
-    ],
-    "Expiry Date": [
-      "End date",
-      "Coverage end",
-      "Policy end date",
-      "Expires on"
-    ],
-    "Provider-specific co-insurance at Al Ahli Hospital": [
-      "Al Ahli Hospital co-insurance",
-      "Hospital-specific co-insurance",
-      "Al Ahli co-insurance",
-      "Hospital co-insurance percentage",
-      "Al Ahli benefits",
-      "Co-insurance at Al Ahli",
-      "Al Ahli Hospital coverage",
-      "Al Ahli Hospital benefits",
-      "Co-insurance - Al Ahli",
-      "Al Ahli specific co-insurance"
-    ],
+    "Policy Number": [],
+    "Category": [],
+    "Effective Date": [],
+    "Expiry Date": [],
+    "Provider-specific co-insurance at Al Ahli Hospital": [],
     "Co-insurance on all inpatient treatment": [
-      "Inpatient co-insurance",
-      "Hospital co-insurance",
-      "Inpatient treatment co-insurance",
-      "Hospital admission co-insurance",
-      "Inpatient coverage",
-      "Co-insurance for inpatient",
-      "Inpatient treatment coverage",
-      "Hospital stay co-insurance",
-      "Inpatient care co-insurance",
-      "Co-insurance - Inpatient"
+      "Co-insurance on all inpatient treatments",
+      "In-patient co-insurance"
     ],
     "Deductible on consultation": [
-      "Consultation deductible",
-      "Outpatient deductible",
-      "Per visit excess",
-      "Consultation excess",
-      "Outpatient excess",
-      "Doctor visit deductible",
-      "Clinic visit excess",
-      "Outpatient visit co-pay",
-      "Consultation co-payment",
-      "Deductible - Outpatient"
+      "Deductible on consultations",
+      "Consultation deductible"
     ],
     "Vaccination & Immunization": [
-      "Vaccination coverage",
-      "Immunization benefits",
-      "Vaccine coverage",
-      "Immunization coverage"
+      "Vaccination & Immunizations"
     ],
     "Psychiatric treatment & Psychotherapy": [
-      "Mental health coverage",
-      "Psychiatric care",
-      "Psychotherapy coverage",
-      "Mental health treatment"
+      "Psychiatric treatment & Psychotherapies"
     ],
     "Pregnancy & Childbirth": [
-      "Maternity coverage",
-      "Pregnancy benefits",
-      "Childbirth coverage",
-      "Maternity benefits"
+      "Pregnancy & Childbirths"
     ],
-    "Dental Benefit": [
-      "Dental coverage",
-      "Dental benefits",
-      "Dental care",
-      "Oral health coverage"
-    ],
-    "Optical Benefit": [
-      "Vision coverage",
-      "Eye care benefits",
-      "Optical coverage",
-      "Vision benefits"
-    ]
+    "Dental Benefit": [],
+    "Optical Benefit": []
   }
 };
 
