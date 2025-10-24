@@ -103,6 +103,20 @@ function buildPrompt(
         "  Extract exactly as shown: 'QAR 3,000..... per policy year' or 'Not covered'\n" +
         "- Field: 'Vaccination & Immunization'\n" +
         "  If not found, try 'Vaccination & Immunizations' (plural variant)\n";
+        "\nALKOOT EXTRACTION RULES (STRICT EXACT MATCHING):\n" +
+        "- Extract ONLY if field name appears EXACTLY in the PDF\n" +
+        "- Do NOT use similar field names or variations\n" +
+        "- Do NOT infer, assume, or combine information from multiple sources\n" +
+        "- Do NOT use values from other fields even if they seem related\n" +
+        "- If field name is not found EXACTLY, return null\n" +
+        "- Return the EXACT text as it appears in the PDF, preserving all formatting\n" +
+        "- For multi-line values, combine them into one continuous value\n" +
+        "- Remove citation markers (【4:16†source】, [4:16†source], {4:16†source})\n" +
+        "- Preserve all formatting: QAR, %, commas, and special characters\n" +
+        "\nEXAMPLE:\n" +
+        "- If 'Provider-specific co-insurance at Al Ahli Hospital' is NOT in PDF, return null\n" +
+        "- Do NOT use 'Co-insurance on all inpatient treatment' value for it\n" +
+        "- Each field must have its own explicit value in the PDF\n";
       break;
     default:
       break;
@@ -125,8 +139,19 @@ function buildPrompt(
     "6. PRESERVE FORMAT: Keep QAR, %, dates, commas exactly as shown\n" +
     "7. MULTI-LINE: If value spans multiple lines, combine into one continuous value\n" +
     "8. CLEAN CITATIONS: Remove citation markers like 【4:16†source】, [4:16†source], {4:16†source}\n" +
-    "9. SINGULAR/PLURAL FALLBACK: If exact field not found, try singular/plural variants\n" +
-    "\nVALUE HANDLING:\n" +
+    "\nEXTRACTION PROCESS:\n" +
+    "1. Search for EXACT field name in tables (first column, headers)\n" +
+    "2. If found, extract the complete value from the corresponding cell\n" +
+    "3. If not found, search in narrative text for exact field name\n" +
+    "4. If still not found, return null\n" +
+    "5. Do NOT search for synonyms or similar names\n" +
+    "6. Do NOT use values from related fields\n" +
+    "\nIMPORTANT EXAMPLES:\n" +
+    "- If 'Provider-specific co-insurance at Al Ahli Hospital' is NOT in PDF, return null\n" +
+    "- Do NOT use 'Co-insurance on all inpatient treatment' value for it\n" +
+    "- Each field must have its own explicit value in the PDF\n" +
+    "- If a field name does not appear exactly, return null\n" +
+      "\nVALUE HANDLING:\n" +
     "- If field shows 'Nil', 'Not covered', or 'Covered': Extract that as the value\n" +
     "- If field is genuinely not in document: Return null (not 'Not found', not empty string)\n" +
     "\nOUTPUT REQUIREMENTS:\n" +
