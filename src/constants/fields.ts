@@ -41,13 +41,10 @@ export const FIELD_SUGGESTIONS = {
   [PAYER_PLANS.QLM]: {
     "Insured": [
       "Policyholder",
-      "Member name",
-      "Insured person",
       "Beneficiary name"
     ],
     "Policy No": [
       "Policy number",
-      "Policy ID",
       "Contract number",
       "Policy reference"
     ],
@@ -141,45 +138,22 @@ export const FIELD_SUGGESTIONS = {
       "Expires on"
     ],
     "Provider-specific co-insurance at Al Ahli Hospital": [
-      "Al Ahli Hospital co-insurance",
-      "Hospital-specific co-insurance",
-      "Al Ahli co-insurance",
-      "Hospital co-insurance percentage",
-      "Al Ahli benefits",
-      "Co-insurance at Al Ahli",
-      "Al Ahli Hospital coverage",
-      "Al Ahli Hospital benefits",
-      "Co-insurance - Al Ahli",
-      "Al Ahli specific co-insurance"
     ],
     "Co-insurance on all inpatient treatment": [
       "Inpatient co-insurance",
-      "Hospital co-insurance",
       "Inpatient treatment co-insurance",
-      "Hospital admission co-insurance",
       "Inpatient coverage",
       "Co-insurance for inpatient",
       "Inpatient treatment coverage",
-      "Hospital stay co-insurance",
-      "Inpatient care co-insurance",
       "Co-insurance - Inpatient"
     ],
     "Deductible on consultation": [
+      "Deductible on consultation",
       "Consultation deductible",
       "Outpatient deductible",
-      "Per visit excess",
-      "Consultation excess",
-      "Outpatient excess",
-      "Doctor visit deductible",
-      "Clinic visit excess",
-      "Outpatient visit co-pay",
-      "Consultation co-payment",
-      "Deductible - Outpatient"
     ],
     "Vaccination & Immunization": [
       "Vaccination coverage",
-      "Immunization benefits",
-      "Vaccine coverage",
       "Immunization coverage"
     ],
     "Psychiatric treatment & Psychotherapy": [
@@ -191,8 +165,6 @@ export const FIELD_SUGGESTIONS = {
     "Pregnancy & Childbirth": [
       "Maternity coverage",
       "Pregnancy benefits",
-      "Childbirth coverage",
-      "Maternity benefits"
     ],
     "Dental Benefit": [
       "Dental coverage",
@@ -202,8 +174,6 @@ export const FIELD_SUGGESTIONS = {
     ],
     "Optical Benefit": [
       "Vision coverage",
-      "Eye care benefits",
-      "Optical coverage",
       "Vision benefits"
     ]
   }
