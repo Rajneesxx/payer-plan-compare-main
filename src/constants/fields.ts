@@ -148,7 +148,7 @@ export const FIELD_SUGGESTIONS = {
       "Co-insurance - Inpatient"
     ],
     "Deductible on consultation": [
-      "Deductible on consultation",
+      "Deductible on consultations",
       "Consultation deductible",
       "Outpatient deductible",
     ],
