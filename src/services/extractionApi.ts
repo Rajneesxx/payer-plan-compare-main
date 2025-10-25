@@ -67,7 +67,7 @@ function buildPrompt(
         "\n=== ALKOOT STRICT EXTRACTION MODE ===\n" +
         "RULE 1 - EXACT FIELD NAME MATCHING:\n" +
         "- ONLY extract if the exact field name appears in the PDF\n" +
-        "- Do NOT use similar names, abbreviations, or variations\n" +
+        "- Use similar names, abbreviations, or variations like consultation could be consulations in pdf\n" +
         "- Do NOT use synonyms or related field names\n" +
         "\nRULE 2 - NO INFERENCE OR ASSUMPTIONS:\n" +
         "- Extract ONLY what is explicitly written\n" +
@@ -91,7 +91,7 @@ function buildPrompt(
         "   - If field ends with 's', try removing it (e.g., 'Benefits' → 'Benefit')\n" +
         "   - If field doesn't end with 's', try adding 's' (e.g., 'Benefit' → 'Benefits')\n" +
         "   - Example: 'Vaccination & Immunization' could match 'Vaccination & Immunizations'\n" +
-        "   - Example: 'Dental Benefit' could match 'Dental Benefits'\n" +
+        "   - Example: 'Deductible on consultation' could match 'Deductible on consultations'\n" +
         "5. If singular/plural match found, extract that value\n" +
         "6. If still not found anywhere, return null\n" +
         "\nCRITICAL EXAMPLES:\n" +
@@ -108,7 +108,7 @@ function buildPrompt(
         "- Do NOT use similar field names or variations\n" +
         "- Do NOT infer, assume, or combine information from multiple sources\n" +
         "- Do NOT use values from other fields even if they seem related\n" +
-        "- If field name is not found EXACTLY, return null\n" +
+        "- If field name is not found EXACTLY, return null apart from deductible on consultations\n" +
         "- Return the EXACT text as it appears in the PDF, preserving all formatting\n" +
         "- For multi-line values, combine them into one continuous value\n" +
         "- Remove citation markers (【4:16†source】, [4:16†source], {4:16†source})\n" +
