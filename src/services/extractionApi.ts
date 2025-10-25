@@ -149,6 +149,7 @@ function buildPrompt(
     "\nIMPORTANT EXAMPLES:\n" +
     "- If 'Provider-specific co-insurance at Al Ahli Hospital' is NOT in PDF, return null\n" +
     "- Do NOT use 'Co-insurance on all inpatient treatment' value for it\n" +
+    "_ Use 'Co-insurance on all inpatient treatment' value for that specific field if present\n" +
     "- Each field must have its own explicit value in the PDF\n" +
     "- If a field name does not appear exactly, return null\n" +
     "_ For deductible on consultation is not found, Search for Deductible on consultations\n" +
