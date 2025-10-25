@@ -151,6 +151,7 @@ function buildPrompt(
     "- Do NOT use 'Co-insurance on all inpatient treatment' value for it\n" +
     "- Each field must have its own explicit value in the PDF\n" +
     "- If a field name does not appear exactly, return null\n" +
+    "_ For deductible on consultation is not found, Search for Deductible on consultations\n" +
       "\nVALUE HANDLING:\n" +
     "- If field shows 'Nil', 'Not covered', or 'Covered': Extract that as the value\n" +
     "- If field is genuinely not in document: Return null (not 'Not found', not empty string)\n" +
