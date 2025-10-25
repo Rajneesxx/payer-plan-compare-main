@@ -149,6 +149,7 @@ export const FIELD_SUGGESTIONS = {
     ],
     "Deductible on consultation": [
       "Deductible on consultations",
+      "Deductible",
       "Consultation deductible",
       "Outpatient deductible",
     ],
