@@ -28,7 +28,7 @@ export const ALKOOT_FIELDS = [
   "Expiry Date", 
   "Provider-specific co-insurance at Al Ahli Hospital",
   "Co-insurance on all inpatient treatment", 
-  "Co-insurance"
+  "Co-insurance",
   "Deductible on consultation",
   "Vaccination & Immunization",
   "Psychiatric treatment & Psychotherapy",
