@@ -214,7 +214,7 @@ async function callChatCompletion(params: {
   prompt: string;
   model?: string;
 }): Promise<any> {
-  const { apiKey, prompt, model = "gpt-4o" } = params;
+  const { apiKey, prompt, model = "gpt-4-turbo-preview" } = params;
 
   const body = {
     model,
@@ -254,7 +254,7 @@ async function createAssistantAndRun(params: {
   prompt: string;
   model?: string;
 }): Promise<any> {
-  const { apiKey, fileId, prompt, model = "gpt-4o" } = params;
+  const { apiKey, fileId, prompt, model = "gpt-4-turbo-preview" } = params;
 
   // Create assistant with file search capability
   const assistantRes = await fetch(`${OPENAI_BASE}/assistants`, {
