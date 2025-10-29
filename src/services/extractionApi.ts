@@ -58,16 +58,21 @@ function buildPrompt(
     case PAYER_PLANS.QLM:
       specificInstructions =
         "\nQLM FORMAT RULES:\n" +
-        "- 'Vaccination of children': Merge as 'QAR X,XXX/PPPY'\n" +
-        "- 'Period of Insurance': Format as 'From [date] To [date]'\n" +
-        "- 'Psychiatric Treatment': Return only 'Covered'\n";
+        "- 'Vaccination of children': Extract exact value as shown in the PDF table (field name on left, value on right)\n" +
+        "- If 'Vaccination of children' shows 'Covered' in the table, return EXACTLY 'Covered'\n" +
+        "- Period of Insurance': Format as 'From [date] To [date]'\n" +
+        "- 'Psychiatric Treatment': Return only 'Covered'\n" +
+        "\nQLM TABLE EXTRACTION:\n" +
+        "- In QLM tables, field names are in the LEFT column\n" +
+        "- Extract values from the RIGHT column in the same row\n" +
+        "- For 'Vaccination of children', extract the EXACT text (e.g. 'Covered')\n";
       break;
     case PAYER_PLANS.ALKOOT:
       specificInstructions =
         "\n=== ALKOOT STRICT EXTRACTION MODE ===\n" +
         "RULE 1 - EXACT FIELD NAME MATCHING:\n" +
         "- ONLY extract if the exact field name appears in the PDF\n" +
-        "- Use similar names, abbreviations, or variations like consultation could be consulations in pdf\n" +
+        "- Do NOT use similar names, abbreviations, or variations\n" +
         "- Do NOT use synonyms or related field names\n" +
         "\nRULE 2 - NO INFERENCE OR ASSUMPTIONS:\n" +
         "- Extract ONLY what is explicitly written\n" +
@@ -91,7 +96,7 @@ function buildPrompt(
         "   - If field ends with 's', try removing it (e.g., 'Benefits' → 'Benefit')\n" +
         "   - If field doesn't end with 's', try adding 's' (e.g., 'Benefit' → 'Benefits')\n" +
         "   - Example: 'Vaccination & Immunization' could match 'Vaccination & Immunizations'\n" +
-        "   - Example: 'Deductible on consultation' could match 'Deductible on consultations'\n" +
+        "   - Example: 'Dental Benefit' could match 'Dental Benefits'\n" +
         "5. If singular/plural match found, extract that value\n" +
         "6. If still not found anywhere, return null\n" +
         "\nCRITICAL EXAMPLES:\n" +
@@ -108,7 +113,7 @@ function buildPrompt(
         "- Do NOT use similar field names or variations\n" +
         "- Do NOT infer, assume, or combine information from multiple sources\n" +
         "- Do NOT use values from other fields even if they seem related\n" +
-        "- If field name is not found EXACTLY, return null apart from deductible on consultations\n" +
+        "- If field name is not found EXACTLY, return null\n" +
         "- Return the EXACT text as it appears in the PDF, preserving all formatting\n" +
         "- For multi-line values, combine them into one continuous value\n" +
         "- Remove citation markers (【4:16†source】, [4:16†source], {4:16†source})\n" +
@@ -141,18 +146,17 @@ function buildPrompt(
     "8. CLEAN CITATIONS: Remove citation markers like 【4:16†source】, [4:16†source], {4:16†source}\n" +
     "\nEXTRACTION PROCESS:\n" +
     "1. Search for EXACT field name in tables (first column, headers)\n" +
-    "2. If found, extract the complete value from the corresponding cell\n" +
-    "3. If not found, search in narrative text for exact field name\n" +
-    "4. If still not found, return null\n" +
-    "5. Do NOT search for synonyms or similar names\n" +
-    "6. Do NOT use values from related fields\n" +
+    "2. If found, extract the complete value from the ADJACENT CELL on the RIGHT side of the table\n" +
+    "3. For 'Vaccination of children', extract the EXACT text from the right-side cell (e.g. 'Covered')\n" +
+    "4. If not found in tables, search in narrative text for exact field name\n" +
+    "5. If still not found, return null\n" +
+    "6. Do NOT search for synonyms or similar names\n" +
+    "7. Do NOT use values from related fields\n" +
     "\nIMPORTANT EXAMPLES:\n" +
     "- If 'Provider-specific co-insurance at Al Ahli Hospital' is NOT in PDF, return null\n" +
     "- Do NOT use 'Co-insurance on all inpatient treatment' value for it\n" +
-    "_ Use 'Co-insurance on all inpatient treatment' value for that specific field if present\n" +
     "- Each field must have its own explicit value in the PDF\n" +
     "- If a field name does not appear exactly, return null\n" +
-    "_ For deductible on consultation is not found, Search for Deductible on consultations\n" +
       "\nVALUE HANDLING:\n" +
     "- If field shows 'Nil', 'Not covered', or 'Covered': Extract that as the value\n" +
     "- If field is genuinely not in document: Return null (not 'Not found', not empty string)\n" +
@@ -445,7 +449,6 @@ function validateExtractedValue(value: string | null, fieldName: string): string
     'not listed',
     'not shown',
     'not included',
-    'not covered',
     'not applicable',
     'tbd',
     'to be determined',
@@ -535,8 +538,11 @@ function normalizeLabel(label: string): string {
 function formatQLMFields(normalized: ExtractedData): ExtractedData {
   const result = { ...normalized };
   
-  // Format vaccination field to QAR X,XXX/PPPY
+  // Preserve exact value for Vaccination field
   const vaccinationField = "Vaccination of children";
+  // No formatting applied - keeping the exact value as extracted from PDF
+  // Uncomment below code if you want to apply formatting
+  /*
   if (result[vaccinationField]) {
     let value = result[vaccinationField] as string;
     // If it already has the correct format, keep it
@@ -551,6 +557,7 @@ function formatQLMFields(normalized: ExtractedData): ExtractedData {
       }
     }
   }
+  */
   
   // Format insurance period to "From X To Y"
   const insurancePeriodField = "Period of Insurance";
@@ -821,6 +828,9 @@ export async function compareDataApi({
 
   return results;
 }
+
+
+
 
 
 
