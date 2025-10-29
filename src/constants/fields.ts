@@ -83,10 +83,6 @@ export const FIELD_SUGGESTIONS = {
       "Consultation excess amount"
     ],
     "Vaccination of children": [
-      "Child vaccination",
-      "Vaccination coverage",
-      "Immunization for children",
-      "Child immunization"
     ],
     "Psychiatric Treatment": [
       "Mental health coverage",
