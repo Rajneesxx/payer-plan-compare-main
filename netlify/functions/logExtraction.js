@@ -2,8 +2,8 @@
 const fs = require('fs');
 const path = require('path');
 
-// In Netlify Functions, we can use /tmp for temporary storage
-const LOG_DIR = '/tmp/extraction-logs';
+// Use a persistent storage location for logs
+const LOG_DIR = path.join(process.cwd(), 'logs');
 const LOG_FILE = path.join(LOG_DIR, 'extraction_logs.txt');
 
 // Ensure logs directory exists
@@ -82,3 +82,4 @@ const handler = async (event) => {
 };
 
 module.exports = { handler };
+
