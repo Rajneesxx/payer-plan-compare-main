@@ -2,23 +2,30 @@
 const fs = require('fs');
 const path = require('path');
 
-// Check if we're running in Netlify environment
-const isNetlifyEnvironment = process.env.NETLIFY === 'true' || process.env.AWS_LAMBDA_FUNCTION_NAME !== undefined;
+// IMPORTANT: Netlify functions can ONLY write to /tmp
+// Always use /tmp in production for Netlify functions
+let LOG_DIR = '/tmp/extraction-logs';
 
-// Use appropriate storage location based on environment
-const LOG_DIR = isNetlifyEnvironment
-  ? '/tmp/extraction-logs'  // Use /tmp in Netlify environment (writable)
-  : path.join(process.cwd(), 'logs'); // Use local path in development
+// For local development, we can detect if we're not in a production environment
+if (!process.env.NETLIFY && !process.env.AWS_LAMBDA_FUNCTION_NAME && process.env.NODE_ENV !== 'production') {
+  // Only use the local directory in development
+  try {
+    // Check if we can access the local directory
+    const localLogsDir = path.join(process.cwd(), 'logs');
+    if (fs.existsSync(localLogsDir) || fs.existsSync(path.dirname(localLogsDir))) {
+      // We're in development and can use the local directory
+      LOG_DIR = localLogsDir;
+    }
+  } catch (error) {
+    console.log('Using /tmp directory even in development due to:', error.message);
+  }
+}
+
 const LOG_FILE = path.join(LOG_DIR, 'extraction_logs.txt');
 
 // Ensure logs directory exists
 const ensureLogsDir = () => {
   try {
-    // Log environment information first (in case directory creation fails)
-    console.log(`Environment: ${isNetlifyEnvironment ? 'Netlify' : 'Development'}`);
-    console.log(`Log directory: ${LOG_DIR}`);
-    console.log(`Log file location: ${LOG_FILE}`);
-    
     if (!fs.existsSync(LOG_DIR)) {
       fs.mkdirSync(LOG_DIR, { recursive: true });
       console.log(`Created log directory: ${LOG_DIR}`);
@@ -28,6 +35,10 @@ const ensureLogsDir = () => {
       fs.writeFileSync(LOG_FILE, '');
       console.log(`Created log file: ${LOG_FILE}`);
     }
+    
+    console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`Log directory: ${LOG_DIR}`);
+    console.log(`Log file location: ${LOG_FILE}`);
   } catch (error) {
     console.error('Error setting up log directory/file:', error);
     // Continue execution even if log setup fails
@@ -105,5 +116,3 @@ const handler = async (event) => {
 };
 
 module.exports = { handler };
-
-
