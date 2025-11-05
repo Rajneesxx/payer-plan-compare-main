@@ -28,8 +28,8 @@ export const ALKOOT_FIELDS = [
   "Expiry Date", 
   "Provider-specific co-insurance at Al Ahli Hospital",
   "Co-insurance on all inpatient treatment", 
-  "Co-insurance",
   "Deductible on consultation",
+  "Co-insurance",
   "Vaccination & Immunization",
   "Psychiatric treatment & Psychotherapy",
   "Pregnancy & Childbirth", 
@@ -37,146 +37,82 @@ export const ALKOOT_FIELDS = [
   "Optical Benefit"
 ];
 
-// Field mapping suggestions to help users find similar field names
 export const FIELD_SUGGESTIONS = {
   [PAYER_PLANS.QLM]: {
     "Insured": [
-      "Policyholder",
-      "Beneficiary name"
+    
     ],
     "Policy No": [
       "Policy number",
+      "Policy ID",
       "Contract number",
-      "Policy reference"
     ],
     "Period of Insurance": [
       "Coverage period",
       "Insurance period",
-      "Policy term",
-      "Coverage dates"
+
     ],
     "Plan": [
       "Plan type",
-      "Coverage plan",
       "Plan name",
-      "Insurance plan"
+      "Insurance plan",
+      "PLANS"
     ],
     "For Eligible Medical Expenses at Al Ahli Hospital": [
-      "Al Ahli Hospital coverage",
-      "Hospital-specific benefits",
-      "Al Ahli medical expenses",
-      "Hospital coverage percentage",
-      "Al Ahli benefits"
+
     ],
     "Inpatient Deductible": [
-      "Hospital deductible",
-      "Inpatient excess",
-      "Hospital admission deductible",
-      "Inpatient excess amount",
-      "Hospital admission excess"
     ],
     "Deductible per each outpatient consultation": [
       "Outpatient deductible",
-      "Consultation excess",
-      "Outpatient excess",
-      "Per visit deductible",
-      "Consultation excess amount"
     ],
     "Vaccination of children": [
+      "Child vaccination",
+      "Vaccination coverage",
     ],
     "Psychiatric Treatment": [
-      "Mental health coverage",
-      "Psychiatric care",
-      "Mental health treatment",
       "Psychiatry coverage"
     ],
     "Dental Copayment": [
-      "Dental co-pay",
-      "Dental excess",
-      "Dental coverage",
       "Dental benefits"
     ],
     "Maternity Copayment": [
-      "Maternity co-pay",
-      "Pregnancy coverage",
       "Maternity benefits",
       "Childbirth coverage"
     ],
     "Optical Copayment": [
-      "Optical co-pay",
-      "Vision coverage",
-      "Eye care benefits",
       "Optical benefits"
     ]
   },
   [PAYER_PLANS.ALKOOT]: {
-    "Policy Number": [
-      "Policy ID",
-      "Contract number",
-      "Policy reference",
-      "Policy no"
-    ],
-    "Category": [
-      "Plan category",
-      "Coverage category",
-      "Member category",
-      "Plan type"
-    ],
-    "Effective Date": [
-      "Start date",
-      "Coverage start",
-      "Policy start date",
-      "Effective from"
-    ],
-    "Expiry Date": [
-      "End date",
-      "Coverage end",
-      "Policy end date",
-      "Expires on"
-    ],
-    "Provider-specific co-insurance at Al Ahli Hospital": [
-    ],
+    "Policy Number": [],
+    "Category": [],
+    "Effective Date": [],
+    "Expiry Date": [],
+    "Provider-specific co-insurance at Al Ahli Hospital": [],
     "Co-insurance on all inpatient treatment": [
-      "Inpatient co-insurance",
-      "Inpatient treatment co-insurance",
-      "Inpatient coverage",
-      "Co-insurance for inpatient",
-      "Inpatient treatment coverage",
-      "Co-insurance - Inpatient"
+      "Co-insurance on all inpatient treatments",
+      "In-patient co-insurance"
     ],
-    "Co-insurance":[
-      "Co-insurance"
-      ],
     "Deductible on consultation": [
       "Deductible on consultations",
-      "Deductible",
-      "Consultation deductible",
-      "Outpatient deductible",
+      "Consultation deductible"
+    ],
+    "Co-insurance": [
+      "Co-insurance",
+      "Out-patient co-insurance"
     ],
     "Vaccination & Immunization": [
-      "Vaccination coverage",
-      "Immunization coverage"
+      "Vaccination & Immunizations"
     ],
     "Psychiatric treatment & Psychotherapy": [
-      "Mental health coverage",
-      "Psychiatric care",
-      "Psychotherapy coverage",
-      "Mental health treatment"
+      "Psychiatric treatment & Psychotherapies"
     ],
     "Pregnancy & Childbirth": [
-      "Maternity coverage",
-      "Pregnancy benefits",
+      "Pregnancy & Childbirths"
     ],
-    "Dental Benefit": [
-      "Dental coverage",
-      "Dental benefits",
-      "Dental care",
-      "Oral health coverage"
-    ],
-    "Optical Benefit": [
-      "Vision coverage",
-      "Vision benefits"
-    ]
+    "Dental Benefit": [],
+    "Optical Benefit": []
   }
 };
 
@@ -195,3 +131,4 @@ export interface ComparisonResult {
   file2Value: string | null;
   status: 'same' | 'different' | 'missing';
 }
+
