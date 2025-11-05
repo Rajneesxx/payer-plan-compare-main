@@ -108,7 +108,7 @@ export const FIELD_SUGGESTIONS = {
     "Psychiatric treatment & Psychotherapy": [
       "Psychiatric treatment & Psychotherapies"
     ],
-    "Pregnancy & Childbirth": [
+    "Pregnancy and Childbirth": [
       "Pregnancy & Childbirths",
       "Pregnancy and childbirth(in accordance with Hamad Protocol/s)"
     ],
