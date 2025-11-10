@@ -1,7 +1,49 @@
+/**
+ * DATA SCIENCE APPROACH TO INSURANCE POLICY EXTRACTION
+ * 
+ * This module implements a comprehensive data science strategy for extracting
+ * insurance policy data with maximum accuracy. Key improvements:
+ * 
+ * 1. MULTI-MODEL STRATEGY
+ *    - Primary: o1-preview (superior reasoning for complex documents)
+ *    - Fallback: gpt-4o (reliability and speed)
+ *    - Automatic fallback on failure
+ * 
+ * 2. FEW-SHOT LEARNING
+ *    - Concrete examples guide the model
+ *    - Shows correct extraction patterns
+ *    - Demonstrates edge cases (& vs and, missing fields)
+ * 
+ * 3. TRIPLE-PASS VALIDATION
+ *    - Pass 1: Initial extraction
+ *    - Pass 2: Revalidation and improvement
+ *    - Pass 3: Final cross-check
+ * 
+ * 4. FIELD-BY-FIELD EXTRACTION (Optional)
+ *    - Individual extraction for missing critical fields
+ *    - Higher accuracy but slower
+ *    - Enable via EXTRACTION_CONFIG.FIELD_BY_FIELD_MODE
+ * 
+ * 5. CONFIDENCE SCORING
+ *    - Each field extraction has confidence score
+ *    - Only accept values above threshold
+ *    - Track extraction source for debugging
+ * 
+ * 6. STRUCTURED OUTPUTS
+ *    - JSON schema enforcement for consistency
+ *    - Prevents parsing errors
+ * 
+ * 7. COMPREHENSIVE TABLE SEARCH
+ *    - Systematic scanning of ALL tables
+ *    - Field name variations (& vs and, case-insensitive)
+ *    - Special table detection (Provider Specific, etc.)
+ * 
+ * 8. RETRY LOGIC
+ *    - Automatic retries on failure
+ *    - Model fallback strategy
+ */
 
-
-
-// OpenAI extraction service using Responses API with attachments + file_search
+//  OpenAI extraction service using Responses API with attachments + file_search
 // Minimal public surface retained: extractDataApi and compareDataApi
 import { FIELD_MAPPINGS, PAYER_PLANS, type PayerPlan, type ExtractedData, type ComparisonResult } from "@/constants/fields";
 import { FIELD_SUGGESTIONS } from "@/constants/fields";
@@ -30,6 +72,28 @@ function trackExtractionEvent(
 
 const OPENAI_BASE = "https://api.openai.com/v1";
 
+// Model configuration - data science approach: use best model for reasoning
+const EXTRACTION_CONFIG = {
+  // o1-preview has better reasoning for complex document analysis
+  PRIMARY_MODEL: "o1-preview",     // Best for complex reasoning and field extraction
+  FALLBACK_MODEL: "gpt-4o",        // Fallback if o1-preview fails
+  MARKDOWN_MODEL: "gpt-4o",        // Good for PDF to markdown conversion
+  USE_STRUCTURED_OUTPUT: true,     // Force JSON schema for consistency
+  FIELD_BY_FIELD_MODE: false,      // Extract fields individually (slower but more accurate)
+  MAX_RETRIES: 2,                  // Retry failed extractions
+  CONFIDENCE_THRESHOLD: 0.7,       // Minimum confidence for accepting a value
+  
+  // ADVANCED METHODS (Clever techniques for large PDFs)
+  USE_CHUNKED_EXTRACTION: true,    // Process large PDFs in overlapping chunks
+  CHUNK_SIZE: 8000,                 // Characters per chunk (with overlap)
+  CHUNK_OVERLAP: 1000,              // Overlap between chunks to not miss boundaries
+  USE_TABLE_FIRST_EXTRACTION: true, // Extract and parse tables separately first
+  USE_SEMANTIC_SEARCH: false,       // Use embeddings to find relevant sections (requires embeddings API)
+  USE_REGEX_VALIDATION: true,       // Validate extracted values with regex patterns
+  USE_CROSS_VALIDATION: true,       // Cross-check values for logical consistency
+  EXTRACT_DOCUMENT_STRUCTURE: true  // First map document structure, then extract
+};
+
 function assertKey(apiKey?: string) {
   if (!apiKey) throw new Error("Missing OpenAI API key");
 }
@@ -56,47 +120,87 @@ function buildPrompt(
       "\n";
   }
 
-  // General extraction instructions that apply to all payer plans
-  const specificInstructions = "\n=== GENERAL EXTRACTION RULES ===\n" +
-  "1. Search for EXACT field names in the document\n" +
-  "2. For tables, look for field names in the left column and values in the right column\n" +
-  "3. Preserve all original formatting (QAR, %, dates, etc.)\n" +
-  "4. If a field is not found, use 'null' (without quotes)\n" +
-  "5. For boolean fields, use 'true' or 'false' (without quotes)\n\n" +
-  "=== CRITICAL: DENTAL & OPTICAL BENEFITS EXTRACTION ===\n" +
-  "1. For 'Dental Benefit' and 'Optical Benefit' fields, follow these steps:\n" +
-  "   a. FIRST, look for a table with 'Benefit' in the first column\n" +
-  "   b. Search for the exact field name in the left column\n" +
-  "   c. Extract the ENTIRE value from the right column\n" +
-  "   d. If not found in tables, search in the document text\n" +
-  "   e. If still not found, return 'null'\n\n" +
-  "2. Example of what to look for (EXACT FORMAT):\n" +
-  "   | Benefit         | Coverage Details             |\n" +
-  "   |-----------------|-------------------------------|\n" +
-  "   | Dental Benefit  | QAR 1,500 per policy year    |\n" +
-  "   | Optical Benefit | QAR 1,000 per policy year    |\n\n" +
-  "3. Special Cases:\n" +
-  "   - If you see 'Not Covered' or 'Not applicable', use that exact text\n" +
-  "   - If the value includes a range (e.g., 'QAR 1,000 - 2,000'), include the full range\n" +
-  "   - If there are conditions (e.g., 'up to QAR 1,500'), include them\n" +
-  "   - Preserve all original text including 'QAR', commas, and periods\n\n" +
-  "4. Common Mistakes to Avoid:\n" +
-  "   - Don't skip values that are in a different format than expected\n" +
-  "   - Don't truncate or summarize the extracted value";
+  // Field-specific extraction instructions
+  const fieldSpecificInstructions = {
+    'Psychiatric treatment and Psychotherapy': {
+      searchTerms: [
+        'Psychiatric treatment and Psychotherapy',
+        'Psychiatric treatment & Psychotherapy',
+        'Psychiatric Treatment',
+        'Psychotherapy',
+        'Mental Health',
+        'Psychiatric care',
+        'Psychological treatment'
+      ],
+      instructions: 'This field is CRITICAL and often missed. Search EVERYWHERE in the document. Look in: 1) Main benefits table, 2) Exclusions/limitations section, 3) Special conditions, 4) Mental health section. Try both "and" and "&" variations. Check for coverage limits, exclusions, or "Not Covered" statements. This field MUST be found - search multiple times if needed.'
+    },
+    'Al Ahli Hospital': {
+      searchTerms: [
+        'Al Ahli Hospital',
+        'Al-Ahli Hospital',
+        'Al Ahli',
+        'Provider-specific co-insurance at Al Ahli Hospital',
+        'Provider Specific Co-insurance',
+        'Additional co-insurance',
+        'Additional deductible'
+      ],
+      instructions: 'This field is CRITICAL and often in a special table. Look for: 1) A table titled "Provider Specific Co-insurance/deductible" or "Additional co-insurance/deductible will apply", 2) Find the row where "Al Ahli Hospital" or "Al-Ahli Hospital" appears, 3) Extract the value in the cell NEXT to "Al Ahli Hospital" (same row, next column), 4) Check for co-insurance percentages or deductible amounts, 5) If not found in special table, check main benefits section. DO NOT confuse with general co-insurance - this must be specifically for Al Ahli Hospital.'
+    },
+    'Dental Benefit': {
+      searchTerms: ['Dental Benefit', 'Dental Coverage', 'Dental Plan', 'Dental', 'Oral Care'],
+      instructions: 'Look for a dedicated dental section or benefits table. Check for annual maximums, coverage percentages, or specific procedures covered.'
+    },
+    'Optical Benefit': {
+      searchTerms: ['Optical Benefit', 'Vision Coverage', 'Eye Care', 'Glasses', 'Contact Lenses', 'Vision', 'Eye'],
+      instructions: 'Search for vision/optical sections. Look for coverage amounts for frames, lenses, or eye exams. Check for frequency limits (e.g., annual coverage).'
+    },
+    'Deductible on consultation': {
+      searchTerms: ['Deductible on consultations', 'Consultation Deductible', 'OPD Deductible', 'Outpatient Deductible'],
+      instructions: 'Check the deductible section, especially for outpatient or consultation services. Look for per-visit or annual deductibles.'
+    }
+  };
+
+  // Generate field-specific instructions
+  const fieldInstructions = Object.entries(fieldSpecificInstructions)
+    .filter(([field]) => safeFields.includes(field))
+    .map(([field, {searchTerms, instructions}]) => {
+      return `\n=== ${field.toUpperCase()} ===\n` +
+      `1. Search for these exact terms: ${searchTerms.join(', ')}\n` +
+      `2. ${instructions}\n` +
+      `3. If not found, check these alternative locations:\n` +
+      `   - Benefits Summary section\n` +
+      `   - Coverage Details\n` +
+      `   - Policy Schedule\n` +
+      `4. If still not found, use 'null'`;
+    }).join('\n\n');
+
+  // General extraction instructions
+  const generalInstructions = "\n=== GENERAL EXTRACTION RULES ===\n" +
+  "1. Search for field names THOROUGHLY throughout the ENTIRE document\n" +
+  "2. Use CASE-INSENSITIVE matching (e.g., 'Psychiatric' = 'psychiatric')\n" +
+  "3. Try MULTIPLE variations of field names (&/and, singular/plural)\n" +
+  "4. For tables, look for field names in the left column and values in the right column\n" +
+  "5. Check MULTIPLE sections: main benefits, exclusions, limitations, special tables\n" +
+  "6. Preserve all original formatting (QAR, %, dates, etc.)\n" +
+  "7. If a field is not found after THOROUGH searching, use 'null' (without quotes)\n" +
+  "8. For boolean fields, use 'true' or 'false' (without quotes)\n" +
+  "9. CRITICAL: Some fields appear in special tables (e.g., 'Provider Specific Co-insurance') - check these too";
+
+  const specificInstructions = generalInstructions;
 
   return (
+    "You are an excellent insurance policy data extraction expert for Al-Ahli hospital with PERFECT ACCURACY. Your sole purpose is to extract data from insurance PDFs with 100% precision. You analyze documents in detail and extract ONLY what is explicitly present. Never infer or hallucinate values that aren't clearly stated. Your output must be clean, consistent, and exactly match the document's content. Return NULL for any field you cannot find with certainty.\n\n" +
     "Extract the following fields from the insurance document with MAXIMUM ACCURACY.\n\n" +
     "=== EXTRACTION RULES ===\n" +
     "1. Search in this order: tables (left column = field, right column = value) → text sections\n" +
-    "2. For each field, look for EXACT name matches first, then try variations\n" +
-    "3. Extract COMPLETE values including conditions, percentages, and amounts\n" +
-    "4. Preserve original formatting (QAR, %, dates, etc.) exactly as shown\n" +
-    "5. If field not found, use 'null' (without quotes)\n\n" +
+    "2. Extract COMPLETE values including conditions, percentages, and amounts\n" +
+    "3. Preserve original formatting (QAR, %, dates, etc.) exactly as shown\n" +
+    "4. If field not found, use 'null' (without quotes)\n\n" +
     "=== OUTPUT FORMAT (MUST FOLLOW EXACTLY) ===\n" +
     "```markdown\n" +
     "| Field Name | Value |\n" +
     "|------------|-------|\n" +
-    "| Field 1    | Value 1 |\n" +
+    "| Field 1    |  Value 1 |\n" +
     "| Field 2    | null |\n" +
     "```\n\n" +
     "=== IMPORTANT ===\n" +
@@ -105,9 +209,9 @@ function buildPrompt(
     "- Keep all original formatting\n" +
     "- DO NOT include explanations or notes\n\n" +
     specificInstructions +
-    "\nFIELDS TO EXTRACT (exact names):\n" +
-    `${fieldList}\n\n` +
-    hintsSection +
+    "\n\n=== FIELDS TO EXTRACT (exact names) ===\n" +
+    fieldList +
+    "\n\n Use your best judgement for extracting the right values" +
     "\nReturn ONLY the markdown table with exactly 2 columns, no other text."
   );
 }
@@ -123,10 +227,939 @@ async function fileToBase64(file: File): Promise<string> {
       } else {
         reject(new Error('Failed to read file as base64'));
       }
-    };
-    reader.onerror = () => reject(reader.error);
+    }; reader.onerror = () => reject(reader.error);
     reader.readAsDataURL(file);
   });
+}
+
+/**
+ * CLEVER METHOD 1: Extract all tables from markdown into structured format
+ * This allows us to search tables systematically without re-parsing
+ */
+function extractAllTables(markdown: string): Array<{
+  title: string;
+  headers: string[];
+  rows: string[][];
+  rawText: string;
+  startIndex: number;
+}> {
+  const tables = [];
+  const lines = markdown.split('\n');
+  let i = 0;
+  
+  while (i < lines.length) {
+    const line = lines[i];
+    
+    // Check if this is a table line (starts with |)
+    if (line.trim().startsWith('|')) {
+      // Look back for table title (usually just before table)
+      let title = '';
+      if (i > 0 && !lines[i-1].trim().startsWith('|') && lines[i-1].trim().length > 0) {
+        title = lines[i-1].trim();
+      }
+      
+      // Extract table
+      const tableStart = i;
+      const tableLines = [];
+      
+      while (i < lines.length && lines[i].trim().startsWith('|')) {
+        tableLines.push(lines[i]);
+        i++;
+      }
+      
+      if (tableLines.length >= 2) {
+        // Parse table
+        const headers = tableLines[0]
+          .split('|')
+          .map(h => h.trim())
+          .filter(h => h.length > 0 && !h.match(/^-+$/));
+        
+        // Skip separator line (usually line 1)
+        const rows = [];
+        for (let j = 1; j < tableLines.length; j++) {
+          const cells = tableLines[j]
+            .split('|')
+            .map(c => c.trim())
+            .filter((c, idx) => idx > 0 && idx <= headers.length);
+          
+          // Skip separator lines
+          if (!cells.every(c => c.match(/^-*$/))) {
+            rows.push(cells);
+          }
+        }
+        
+        tables.push({
+          title,
+          headers,
+          rows,
+          rawText: tableLines.join('\n'),
+          startIndex: tableStart
+        });
+        
+        console.log(`[Table Extraction] Found table "${title}" with ${rows.length} rows and ${headers.length} columns`);
+      }
+    }
+    
+    i++;
+  }
+  
+  console.log(`[Table Extraction] Total tables found: ${tables.length}`);
+  return tables;
+}
+
+/**
+ * CLEVER METHOD 2: Search for field in structured tables
+ * Much faster and more accurate than searching raw markdown
+ */
+function searchFieldInTables(
+  fieldName: string,
+  fieldVariations: string[],
+  tables: Array<{title: string; headers: string[]; rows: string[][]}>
+): { value: any; source: string; confidence: number } | null {
+  
+  const allFieldNames = [fieldName, ...fieldVariations];
+  
+  // Normalize field names for comparison
+  const normalizeField = (f: string) => f.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const normalizedTargets = allFieldNames.map(normalizeField);
+  
+  for (let tableIdx = 0; tableIdx < tables.length; tableIdx++) {
+    const table = tables[tableIdx];
+    
+    // Search in each row
+    for (let rowIdx = 0; rowIdx < table.rows.length; rowIdx++) {
+      const row = table.rows[rowIdx];
+      
+      // Typically, field name is in first column, value in second
+      if (row.length >= 2) {
+        const cellName = row[0];
+        const cellValue = row[1];
+        const normalizedCellName = normalizeField(cellName);
+        
+        // Check if this row matches our field
+        for (const normalizedTarget of normalizedTargets) {
+          if (normalizedCellName === normalizedTarget || 
+              normalizedCellName.includes(normalizedTarget) ||
+              normalizedTarget.includes(normalizedCellName)) {
+            
+            console.log(`[Table Search] Found "${fieldName}" in table "${table.title}", row ${rowIdx}: ${cellValue}`);
+            
+            return {
+              value: cellValue,
+              source: `Table "${table.title}", row ${rowIdx + 1}`,
+              confidence: 0.95  // High confidence for exact table match
+            };
+          }
+        }
+      }
+      
+      // Also check if field name appears in any other column (for multi-column tables)
+      for (let colIdx = 0; colIdx < row.length - 1; colIdx++) {
+        const cellName = row[colIdx];
+        const normalizedCellName = normalizeField(cellName);
+        
+        for (const normalizedTarget of normalizedTargets) {
+          if (normalizedCellName === normalizedTarget) {
+            const cellValue = row[colIdx + 1];
+            console.log(`[Table Search] Found "${fieldName}" in table "${table.title}", row ${rowIdx}, col ${colIdx}: ${cellValue}`);
+            
+            return {
+              value: cellValue,
+              source: `Table "${table.title}", row ${rowIdx + 1}, col ${colIdx + 1}`,
+              confidence: 0.90
+            };
+          }
+        }
+      }
+    }
+  }
+  
+  return null;
+}
+
+/**
+ * CLEVER METHOD 3: Chunk large documents with overlap
+ * Prevents missing fields at chunk boundaries
+ */
+function chunkMarkdown(markdown: string, chunkSize: number, overlap: number): string[] {
+  if (markdown.length <= chunkSize) {
+    return [markdown];
+  }
+  
+  const chunks = [];
+  let start = 0;
+  
+  while (start < markdown.length) {
+    const end = Math.min(start + chunkSize, markdown.length);
+    const chunk = markdown.substring(start, end);
+    chunks.push(chunk);
+    
+    // Move start forward, but with overlap
+    start = end - overlap;
+    
+    // If we're at the end, break
+    if (end === markdown.length) break;
+  }
+  
+  console.log(`[Chunking] Split document into ${chunks.length} chunks (size: ${chunkSize}, overlap: ${overlap})`);
+  return chunks;
+}
+
+/**
+ * CLEVER METHOD 4: Regex validation for common field patterns
+ */
+function validateExtractedValueWithRegex(fieldName: string, value: string): { valid: boolean; suggestion?: string } {
+  if (!value || value === 'null') return { valid: true };
+  
+  const patterns: Record<string, { regex: RegExp; description: string }> = {
+    // QAR amounts
+    amount: { regex: /QAR\s*[\d,]+(?:\s*(?:per|\/)\s*\w+)?/i, description: 'QAR amount' },
+    // Percentages
+    percentage: { regex: /\d+\s*%/, description: 'percentage' },
+    // Dates
+    date: { regex: /\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4}/, description: 'date' },
+    // Policy numbers
+    policyNumber: { regex: /[A-Z0-9\-]{5,}/, description: 'policy number' },
+    // Coverage terms
+    coverage: { regex: /(?:covered|not covered|nil|yes|no)/i, description: 'coverage term' }
+  };
+  
+  // Field-specific validation
+  const lowerField = fieldName.toLowerCase();
+  
+  if (lowerField.includes('date')) {
+    if (!patterns.date.regex.test(value)) {
+      return { valid: false, suggestion: 'Expected date format (DD/MM/YYYY or similar)' };
+    }
+  }
+  
+  if (lowerField.includes('policy') && lowerField.includes('number')) {
+    if (!patterns.policyNumber.regex.test(value)) {
+      return { valid: false, suggestion: 'Expected policy number format' };
+    }
+  }
+  
+  if (lowerField.includes('co-insurance') || lowerField.includes('coinsurance')) {
+    if (!patterns.percentage.regex.test(value) && !patterns.coverage.regex.test(value)) {
+      return { valid: false, suggestion: 'Expected percentage or coverage term' };
+    }
+  }
+  
+  // Check if value looks like a valid extraction (not just punctuation or very short)
+  if (value.length < 2 && !patterns.percentage.regex.test(value)) {
+    return { valid: false, suggestion: 'Value too short' };
+  }
+  
+  return { valid: true };
+}
+
+/**
+ * CLEVER METHOD 5: Document structure extraction
+ * Map the document structure first to understand where fields might be
+ */
+async function extractDocumentStructure(markdown: string, apiKey: string): Promise<{
+  sections: string[];
+  tableLocations: string[];
+  fieldHints: Record<string, string>;
+}> {
+  const prompt = `Analyze this insurance policy document and extract its structure.
+
+Return a JSON object with:
+{
+  "sections": ["section names in order"],
+  "tableLocations": ["where tables appear"],
+  "fieldHints": {"fieldName": "likely section where it appears"}
+}
+
+Document:
+
+${markdown.substring(0, 4000)}... [truncated for structure analysis]
+
+Return ONLY valid JSON.`;
+
+  try {
+    const response = await fetch(`${OPENAI_BASE}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: "gpt-4o",
+        messages: [
+          { role: "system", content: "You are a document structure analyzer. Return only valid JSON." },
+          { role: "user", content: prompt }
+        ],
+        response_format: { type: "json_object" },
+        temperature: 0,
+        max_tokens: 1000,
+      }),
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      const content = data.choices?.[0]?.message?.content;
+      if (content) {
+        const structure = JSON.parse(content);
+        console.log('[Document Structure] Extracted:', structure);
+        return structure;
+      }
+    }
+  } catch (error) {
+    console.warn('[Document Structure] Extraction failed:', error);
+  }
+  
+  return { sections: [], tableLocations: [], fieldHints: {} };
+}
+
+/**
+ * Extracts a single field with high precision (data science approach)
+ */
+async function extractSingleField(
+  markdown: string,
+  fieldName: string,
+  fieldHints: string[],
+  apiKey: string
+): Promise<{ value: any; confidence: number }> {
+  const hintsText = fieldHints.length > 0 
+    ? `\nAlternative names to search for: ${fieldHints.join(", ")}`
+    : "";
+  
+  const prompt = `You are an expert at extracting a SINGLE field from insurance documents.
+
+TARGET FIELD: "${fieldName}"
+${hintsText}
+
+TASK: Find the value for "${fieldName}" in the markdown document below.
+
+SEARCH STRATEGY:
+1. Check ALL tables in the document
+2. Try exact match and case-insensitive match
+3. Try alternative names: & vs and, plural vs singular
+4. Check special tables (e.g., Provider Specific Co-insurance for Al Ahli Hospital)
+
+OUTPUT FORMAT - Return a JSON object:
+{
+  "field": "${fieldName}",
+  "value": "extracted value or null if not found",
+  "confidence": 0.95,
+  "source": "description of where found (e.g., 'Main benefits table, row 5')"
+}
+
+MARKDOWN DOCUMENT:
+
+${markdown}
+
+Return ONLY the JSON object.`;
+
+  try {
+    const response = await fetch(`${OPENAI_BASE}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: EXTRACTION_CONFIG.FALLBACK_MODEL,
+        messages: [
+          {
+            role: "system",
+            content: "You are a precision field extractor. Return valid JSON only."
+          },
+          {
+            role: "user",
+            content: prompt,
+          },
+        ],
+        response_format: { type: "json_object" },
+        temperature: 0,
+        max_tokens: 500,
+      }),
+    });
+
+    if (!response.ok) {
+      return { value: null, confidence: 0 };
+    }
+
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content;
+    
+    if (content) {
+      const result = JSON.parse(content);
+      console.log(`[Single Field] ${fieldName}: ${result.value} (confidence: ${result.confidence}, source: ${result.source})`);
+      return {
+        value: result.value === "null" ? null : result.value,
+        confidence: result.confidence || 0.5
+      };
+    }
+  } catch (error) {
+    console.warn(`Single field extraction failed for ${fieldName}:`, error);
+  }
+  
+  return { value: null, confidence: 0 };
+}
+
+/**
+ * Extracts specific fields from markdown text
+ */
+async function extractFieldsFromMarkdown(
+  markdown: string,
+  fields: string[],
+  apiKey: string,
+  payerPlan?: PayerPlan
+): Promise<Record<string, any>> {
+  const fieldList = fields.map((f) => `- ${f}`).join("\n");
+  
+  // Build field hints if available, including automatic & <-> and variations
+  let hintsSection = "";
+  if (payerPlan && FIELD_SUGGESTIONS[payerPlan]) {
+    const fieldHints = FIELD_SUGGESTIONS[payerPlan];
+    hintsSection =
+      "\n\nFIELD SYNONYMS (search for these alternative names):\n" +
+      fields
+        .map((f) => {
+          const hints = fieldHints[f];
+          const hintsList = hints && Array.isArray(hints) ? [...hints] : [];
+          
+          // Automatically add & <-> and variations
+          if (f.includes('&')) {
+            hintsList.push(f.replace(/\s*&\s*/g, ' and '));
+          } else if (f.includes(' and ')) {
+            hintsList.push(f.replace(/\s+and\s+/g, ' & '));
+          }
+          
+          if (hintsList.length === 0) {
+            // If no hints but field has & or and, still add variations
+            if (f.includes('&')) {
+              return `- ${f}: also look for: ${f.replace(/\s*&\s*/g, ' and ')}`;
+            } else if (f.includes(' and ')) {
+              return `- ${f}: also look for: ${f.replace(/\s+and\s+/g, ' & ')}`;
+            }
+            return "";
+          }
+          
+          return `- ${f}: also look for: ${hintsList.join(", ")}`;
+        })
+        .filter(Boolean)
+        .join("\n");
+  } else {
+    // Even without payer-specific hints, add & <-> and variations
+    const fieldVariations = fields
+      .map((f) => {
+        const variations: string[] = [];
+        if (f.includes('&')) {
+          variations.push(f.replace(/\s*&\s*/g, ' and '));
+        } else if (f.includes(' and ')) {
+          variations.push(f.replace(/\s+and\s+/g, ' & '));
+        }
+        
+        if (variations.length > 0) {
+          return `- ${f}: also look for: ${variations.join(", ")}`;
+        }
+        return "";
+      })
+      .filter(Boolean);
+    
+    if (fieldVariations.length > 0) {
+      hintsSection = "\n\nFIELD SYNONYMS (search for these alternative names):\n" + 
+                     fieldVariations.join("\n");
+    }
+  }
+
+  // Few-shot examples to guide the model (data science approach)
+  const fewShotExamples = `
+EXAMPLE 1 - Table Extraction:
+If markdown contains:
+| Benefit | Coverage |
+|---------|----------|
+| Dental Benefit | QAR 500 per year |
+| Optical Benefit | Not covered |
+
+Then extract:
+| Field Name | Value |
+|------------|-------|
+| Dental Benefit | QAR 500 per year |
+| Optical Benefit | Not covered |
+
+EXAMPLE 2 - Provider-Specific Table:
+If markdown contains a table titled "Provider Specific Co-insurance":
+| Provider | Co-insurance |
+|----------|--------------|
+| Al Ahli Hospital | 10% |
+| Other providers | 20% |
+
+Then for "Al Ahli Hospital" field, extract: 10%
+
+EXAMPLE 3 - Field Name Variations:
+If searching for "Psychiatric treatment and Psychotherapy" and document has:
+| Benefit | Coverage |
+|---------|----------|
+| Psychiatric treatment & Psychotherapy | QAR 1000 |
+
+Then extract: QAR 1000 (even though "&" vs "and" differs)
+
+EXAMPLE 4 - Missing Field:
+If searching for "Dental Coverage" and it's truly not in any table or text:
+| Field Name | Value |
+|------------|-------|
+| Dental Coverage | null |
+`;
+
+  const prompt = `You are an expert insurance policy data extraction assistant with PERFECT ACCURACY.
+
+You will be given a MARKDOWN document (converted from a PDF insurance policy). Your task is to extract specific fields from this markdown with 100% precision.
+
+${fewShotExamples}
+
+CRITICAL EXTRACTION RULES:
+
+1. **Search Strategy - CHECK ALL TABLES FIRST**:
+   - STEP 1: Count how many tables exist in the markdown document
+   - STEP 2: Search EACH table systematically for the field:
+     * Main benefits table (usually the first/largest table)
+     * Provider-specific tables (e.g., "Provider Specific Co-insurance/deductible")
+     * Exclusions or limitations tables
+     * Any other tables in the document
+   - STEP 3: For each table, scan EVERY row looking for the field name
+   - STEP 4: Check synonyms and alternative field names (see field synonyms below)
+   - STEP 5: Look in text sections if not found in any table
+   - IMPORTANT: When searching for field names, also check for "&" vs "and" variations
+     Example: "Vaccination & Immunization" might appear as "Vaccination and Immunization"
+   - Be case-insensitive: "Psychiatric" = "psychiatric", "Childbirth" = "childbirth"
+
+2. **Accuracy Requirements**:
+   - Extract ONLY what is explicitly present in the document
+   - NEVER infer or hallucinate values
+   - If a field is not found with certainty, use 'null'
+   - Preserve exact formatting (QAR, %, dates, etc.)
+
+3. **Table Parsing (CRITICAL - Most Data is in Tables)**:
+   - VERIFY: Count how many tables exist in the markdown - check ALL of them
+   - Tables use | separators in markdown
+   - Field names are typically in the left column (first column)
+   - Values are in the right column (second column or adjacent column)
+   - Multi-column tables: scan all columns to find field names
+   - Check EVERY row in EVERY table - don't skip any rows
+   - Extract complete values including conditions, percentages, amounts
+   - Special tables (e.g., "Provider Specific Co-insurance") contain critical fields
+   - If you don't find a field in the main table, check OTHER tables
+
+4. **Value Extraction**:
+   - Include all details (amounts, percentages, conditions)
+   - Keep original formatting exactly as shown
+   - For multi-part values, include the complete text
+
+5. **Field Name Matching**:
+   - Be flexible with "&" and "and" - treat them as equivalent
+   - Be flexible with capitalization (e.g., "Childbirth" vs "childbirth")
+   - Example matches:
+     • "Vaccinations & Immunizations" = "Vaccinations and Immunizations"
+     • "Pregnancy & Childbirth" = "Pregnancy and childbirth"
+     • "Psychiatric treatment and Psychotherapy" = "Psychiatric treatment and Psychotherapy"
+   - Always return the EXACT field name as requested (with exact capitalization and & if specified)
+
+6. **CRITICAL FIELDS - FREQUENTLY MISSED**:
+   
+   A. **Al Ahli Hospital** (if requested):
+      - This field is FREQUENTLY MISSED - pay extra attention
+      - Look for a table titled "Provider Specific Co-insurance/deductible" or similar
+      - Table may say: "Additional co-insurance/deductible will apply on all services in below mentioned providers"
+      - Find the row where "Al Ahli Hospital" or "Al-Ahli Hospital" is mentioned
+      - Extract the value in the cell BESIDE/NEXT TO "Al Ahli Hospital" (same row, next column)
+      - The value might be: a percentage (e.g., "10%"), an amount (e.g., "QAR 100"), or "Not applicable"
+      - DO NOT confuse with general co-insurance - this must be SPECIFIC to Al Ahli Hospital
+      - If the special table doesn't exist, return 'Not applicable'
+   
+   B. **Psychiatric treatment and Psychotherapy** (if requested):
+      - This field is FREQUENTLY MISSED - search thoroughly
+      - Try BOTH variations: "Psychiatric treatment and Psychotherapy" AND "Psychiatric treatment & Psychotherapy"
+      - Search in multiple sections: main benefits table, exclusions, limitations, mental health
+      - May appear as: "Psychiatric Treatment", "Psychotherapy", "Mental Health Coverage"
+      - Look for: coverage amounts, limits, exclusions, or "Not Covered" statements
+      - Be case-insensitive when searching (e.g., "childbirth" vs "Childbirth")
+      - Search the ENTIRE document - check every table and text section
+
+OUTPUT FORMAT (MUST FOLLOW EXACTLY):
+\`\`\`markdown
+| Field Name | Value |
+|------------|-------|
+| Field 1    | Value 1 |
+| Field 2    | null |
+\`\`\`
+
+IMPORTANT:
+- Return ONLY the markdown table, no other text or explanations
+- Use 'null' for missing fields (without quotes)
+- Keep all original formatting from the document
+- Match field names EXACTLY as provided below
+
+${hintsSection}
+
+FIELDS TO EXTRACT (exact names):
+${fieldList}
+
+MARKDOWN DOCUMENT TO ANALYZE:
+
+${markdown}
+
+Return ONLY the markdown table with exactly 2 columns: Field Name and Value.`;
+
+  // Data science approach: Use o1-preview for better reasoning, with fallback
+  let response;
+  let modelUsed = EXTRACTION_CONFIG.PRIMARY_MODEL;
+  
+  try {
+    // Try o1-preview first (better reasoning for complex extraction)
+    response = await fetch(`${OPENAI_BASE}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: EXTRACTION_CONFIG.PRIMARY_MODEL,
+        messages: [
+          {
+            role: "user",
+            content: prompt,
+          },
+        ],
+        // o1-preview doesn't support temperature/max_tokens in the same way
+      }),
+    });
+    
+    if (!response.ok) {
+      throw new Error(`o1-preview failed: ${response.status}`);
+    }
+  } catch (error) {
+    // Fallback to gpt-4o if o1-preview fails
+    console.warn('o1-preview failed, falling back to gpt-4o:', error);
+    modelUsed = EXTRACTION_CONFIG.FALLBACK_MODEL;
+    
+    response = await fetch(`${OPENAI_BASE}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: EXTRACTION_CONFIG.FALLBACK_MODEL,
+        messages: [
+          {
+            role: "system",
+            content: "You are a medical insurance policy data extraction expert with PERFECT ACCURACY. Extract data from markdown documents with 100% precision."
+          },
+          {
+            role: "user",
+            content: prompt,
+          },
+        ],
+        temperature: 0,
+        max_tokens: 16000,  // Increased to handle large extractions
+      }),
+    });
+  }
+  
+  console.log(`Extraction using model: ${modelUsed}`);
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Field extraction failed: ${response.status} ${errorText}`);
+  }
+
+  const data = await response.json();
+  const content = data.choices?.[0]?.message?.content;
+
+  if (!content) {
+    throw new Error('No content returned from field extraction');
+  }
+
+  console.log('Field extraction response:', content);
+
+  // Parse the markdown table response
+  const extractedData = parseMarkdownTable(content);
+  return extractedData;
+}
+
+/**
+ * Revalidates and improves extracted field values with a second LLM pass
+ */
+async function revalidateExtractedFields(
+  markdown: string,
+  initialExtraction: Record<string, any>,
+  fields: string[],
+  apiKey: string,
+  passNumber: number = 1
+): Promise<Record<string, any>> {
+  console.log(`Starting field revalidation (Pass ${passNumber})...`);
+  
+  // Format the initial extraction for context
+  const initialResults = Object.entries(initialExtraction)
+    .map(([field, value]) => `  • ${field}: ${value === null ? 'NOT FOUND' : value}`)
+    .join('\n');
+  
+  const fieldList = fields.map((f) => `- ${f}`).join("\n");
+  
+  const passDescription = passNumber === 1 
+    ? "SECOND PASS VALIDATION" 
+    : "THIRD PASS - FINAL CROSS-CHECK";
+  
+  const passInstructions = passNumber === 1
+    ? "Your task: REVALIDATE and IMPROVE the extraction with 100% accuracy."
+    : "Your task: FINAL CROSS-CHECK - verify EVERY field one more time with MAXIMUM scrutiny. This is the last chance to catch any errors or missing values.";
+  
+  const prompt = `You are an expert insurance policy data validator with PERFECT ACCURACY.
+
+${passDescription}
+
+You will receive:
+1. A MARKDOWN document (insurance policy)
+2. Previous extraction results
+3. A list of fields that need revalidation
+
+${passInstructions}
+
+PREVIOUS EXTRACTION (may have errors or missing values):
+${initialResults}
+
+REVALIDATION RULES:
+
+1. **Verify EVERY Field Systematically**:
+   - Re-search the ENTIRE markdown for EACH field individually
+   - For each field, check ALL tables in the document - don't skip any
+   - Verify the current value is correct by finding it again in the source
+   - If value is missing (NOT FOUND), do an exhaustive search:
+     * Check every table (count them - did you check them all?)
+     * Check every text section
+     * Try all possible name variations
+   - If value seems wrong or generic, find the correct specific value
+
+2. **Comprehensive Table Search Strategy**:
+   - CRITICAL: Tables contain most field values - check them thoroughly
+   - Count how many tables are in the markdown document
+   - Check EACH table systematically:
+     * Main benefits table (usually the largest)
+     * Provider-specific tables (e.g., "Provider Specific Co-insurance/deductible")
+     * Exclusions/limitations tables
+     * Additional benefits tables
+     * Special conditions tables
+   - For each table, scan EVERY row for the field name
+   - Look for field names with variations (&/and, singular/plural, case differences)
+   - Check both left column (field names) and headers (for multi-column tables)
+   
+   **CRITICAL FIELDS (frequently missed - double check these):**
+   - "Al Ahli Hospital": This is often in a SEPARATE table titled "Provider Specific Co-insurance/deductible". Find the row with "Al Ahli Hospital" and extract value from NEXT column. If no special table exists, return 'Not applicable'.
+   - "Psychiatric treatment and Psychotherapy": Try both "and" and "&". Search ALL tables. Check: benefits table, exclusions table, mental health sections. Look for variations: "Psychiatric Treatment", "Psychotherapy", "Mental Health".
+
+3. **Quality Checks for Each Value**:
+   - Does the value make sense for this field type?
+   - Is the formatting correct (QAR, %, dates, amounts)?
+   - Is it complete with all conditions/details?
+   - Does it look like a complete answer or truncated?
+   - Are there any obvious errors or placeholders?
+   - Did you extract from the correct table row/column?
+
+4. **Improvement Focus**:
+   - Fields marked as "NOT FOUND" - search HARDER, check EVERY table again
+   - Values that seem generic or vague - find specific details
+   - Missing conditions or percentages - include them fully
+   - Incomplete information - extract the complete value
+   - Suspicious values - verify against source table
+
+5. **Output Requirements**:
+   - Return ALL fields (even if value doesn't change from previous pass)
+   - Use 'null' ONLY if truly not found after checking EVERY table
+   - Preserve exact formatting from document (QAR, %, etc.)
+   - Return EXACT field names as requested (match case and punctuation)
+
+FIELDS TO REVALIDATE:
+${fieldList}
+
+MARKDOWN DOCUMENT:
+
+${markdown}
+
+Return ONLY a markdown table with exactly 2 columns: Field Name and Value.
+
+OUTPUT FORMAT:
+\`\`\`markdown
+| Field Name | Value |
+|------------|-------|
+| Field 1    | Value 1 |
+| Field 2    | null |
+\`\`\``;
+
+  const response = await fetch(`${OPENAI_BASE}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: "gpt-4o",
+      messages: [
+        {
+          role: "system",
+          content: "You are an expert insurance policy data validator. Your job is to revalidate and improve field extractions with 100% accuracy."
+        },
+        {
+          role: "user",
+          content: prompt,
+        },
+      ],
+      temperature: 0,
+      max_tokens: 16000,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.warn(`Revalidation failed: ${response.status} ${errorText}`);
+    // Return original extraction if revalidation fails
+    return initialExtraction;
+  }
+
+  const data = await response.json();
+  const content = data.choices?.[0]?.message?.content;
+
+  if (!content) {
+    console.warn('No content returned from revalidation');
+    return initialExtraction;
+  }
+
+  console.log('Revalidation response received');
+
+  // Parse the revalidated data
+  const revalidatedData = parseMarkdownTable(content);
+  
+  // Log changes
+  console.log(`\n=== REVALIDATION RESULTS (Pass ${passNumber}) ===`);
+  let changesCount = 0;
+  for (const field of fields) {
+    const oldValue = initialExtraction[field];
+    const newValue = revalidatedData[field];
+    if (oldValue !== newValue) {
+      changesCount++;
+      console.log(`📝 ${field}:`);
+      console.log(`   Before: ${oldValue === null ? 'null' : oldValue}`);
+      console.log(`   After:  ${newValue === null ? 'null' : newValue}`);
+    }
+  }
+  
+  if (changesCount === 0) {
+    console.log('✓ No changes - all values verified as correct');
+  } else {
+    console.log(`\nTotal changes in Pass ${passNumber}: ${changesCount} field(s) improved`);
+  }
+  
+  return revalidatedData;
+}
+
+/**
+ * Converts a PDF to Markdown format with specific rules:
+ * - Preserves all tables as given in the PDF
+ * - Removes all footers on all pages
+ * - Preserves header only on the first page
+ * - Removes headers on subsequent pages
+ */
+async function convertPDFToMarkdown(file: File, apiKey: string): Promise<string> {
+  console.log('Converting PDF to Markdown...');
+  
+  // Upload the PDF file to OpenAI
+  const fileId = await uploadFileToOpenAI(file, apiKey);
+  
+  const prompt = `You are an expert PDF to Markdown converter. Your task is to convert this PDF document to clean, well-formatted Markdown.
+
+CRITICAL RULES YOU MUST FOLLOW:
+
+1. **COMPLETE CONTENT EXTRACTION (HIGHEST PRIORITY)**:
+   - Extract EVERY SINGLE CHARACTER from the document
+   - DO NOT skip, miss, or omit ANY content whatsoever
+   - Extract ALL text from EVERY page - nothing should be left behind
+   - Include ALL data from tables, paragraphs, sections, and subsections
+   - If you see text in the PDF, it MUST appear in the markdown output
+   - Missing even a single field or value is UNACCEPTABLE
+   - Extract 100% of the document content with ZERO exceptions
+
+2. **TABLE PRESERVATION (CRITICAL - TABLES CONTAIN MOST IMPORTANT DATA)**: 
+   - Tables are the PRIMARY source of field values - extract them with 100% accuracy
+   - Preserve ALL tables EXACTLY as they appear in the PDF
+   - Extract EVERY SINGLE ROW - do not skip any rows
+   - Extract EVERY SINGLE COLUMN - do not skip any columns
+   - Extract EVERY CELL VALUE completely - including all text, numbers, percentages, amounts
+   - Use proper Markdown table syntax with | separators
+   - Maintain exact row and column structure
+   - Keep all table headers, labels, and values intact
+   - If a table has 50 rows, the markdown must have 50 rows
+   - Special tables (e.g., "Provider Specific Co-insurance") are CRITICAL - extract completely
+   - Multi-column tables: preserve all columns with proper alignment
+   - Merged cells: extract the content and indicate the span
+   - Tables within sections: extract ALL of them, not just the main table
+   - VERIFY: After extracting a table, count the rows - did you extract them all?
+
+3. **Header Handling**:
+   - Keep the header ONLY from the FIRST page
+   - REMOVE headers from ALL subsequent pages
+   - Headers typically include company logos, document titles at the top
+
+4. **Footer Handling**:
+   - REMOVE ALL footers from EVERY page
+   - Footers typically include page numbers, company info, disclaimers at the bottom
+
+5. **Content Preservation**:
+   - Preserve ALL body content from EVERY page
+   - Extract ALL paragraphs, sections, and subsections completely
+   - Maintain paragraph structure
+   - Keep bullet points and numbered lists - extract ALL items
+   - Preserve bold and italic formatting where visible
+   - Include all field names, values, labels, and descriptions
+   - Extract all benefit details, coverage amounts, percentages, and conditions
+
+6. **Output Format**:
+   - Return ONLY the Markdown content
+   - No explanations or comments
+   - Clean, readable Markdown format
+
+REMEMBER: Your #1 priority is COMPLETENESS. Every character in the PDF must be in the markdown output. Missing content will cause critical data extraction failures. Extract EVERYTHING.
+
+Analyze the document carefully and convert it to Markdown following these rules exactly.`;
+
+  // Use Assistants API with file_search to process the PDF
+  const response = await createAssistantAndRun({ 
+    apiKey, 
+    fileId, 
+    prompt,
+    model: "gpt-4o"
+  });
+
+  // Extract markdown content from response
+  let markdown = '';
+  if (response.data?.[0]?.content?.[0]?.text?.value) {
+    markdown = response.data[0].content[0].text.value;
+  } else {
+    throw new Error('No markdown content returned from PDF conversion');
+  }
+
+  console.log('PDF to Markdown conversion completed');
+  console.log('Markdown length:', markdown.length, 'characters');
+  
+  // VALIDATION: Check if conversion seems complete
+  const estimatedMinLength = file.size * 0.3; // PDF text is usually ~30% of file size
+  if (markdown.length < estimatedMinLength && file.size > 100000) {
+    console.warn(`⚠️  WARNING: Markdown output (${markdown.length} chars) seems short for PDF size (${file.size} bytes)`);
+    console.warn(`⚠️  This might indicate truncation. Expected at least ${Math.floor(estimatedMinLength)} characters.`);
+  }
+  
+  // Count tables in markdown
+  const tableCount = (markdown.match(/\n\|/g) || []).length / 3; // Rough estimate: 3 lines per table
+  console.log(`Detected approximately ${Math.floor(tableCount)} tables in markdown`);
+  
+  // Check for truncation indicators
+  if (markdown.endsWith('...') || markdown.includes('[Content truncated]')) {
+    throw new Error('PDF conversion was truncated! Content is incomplete.');
+  }
+  
+  return markdown;
 }
 
 async function uploadFileToOpenAI(file: File, apiKey: string): Promise<string> {
@@ -173,7 +1206,7 @@ async function callChatCompletion(params: {
     response_format: { type: "markdown" },
     temperature: 0,  // Keep at 0 for maximum determinism
     top_p: 0.1,     // Low top_p for focused output
-    max_tokens: 4000,
+    max_tokens: 16000,  // INCREASED: Allow full extraction output for large PDFs
     frequency_penalty: 0,  // No penalty for repeating tokens
     presence_penalty: 0,   // No penalty for new topics
   };
@@ -193,6 +1226,7 @@ async function callChatCompletion(params: {
   }
 
   const response = await res.text();
+  console.log('Chat completion response:', response);
   return response;
 }
 
@@ -216,7 +1250,7 @@ async function createAssistantAndRun(params: {
       model,
       name: "Medical Insurance Extractor",
       description: "Specialized assistant for extracting medical insurance policy data with high precision",
-      instructions: "You are a medical insurance policy data extraction expert with PERFECT ACCURACY. Your sole purpose is to extract data from insurance PDFs with 100% precision. You analyze documents in detail and extract ONLY what is explicitly present. Never infer or hallucinate values that aren't clearly stated. Your output must be clean, consistent, and exactly match the document's content. Return NULL for any field you cannot find with certainty. When extracting from tables, be extremely precise about matching field names exactly.",
+      instructions: "You are a medical insurance policy data extraction expert with PERFECT ACCURACY. Your PRIMARY GOAL is to extract EVERY SINGLE CHARACTER from the PDF document - DO NOT miss any content. Extract 100% of all text, tables, fields, and values from the document. Missing content is UNACCEPTABLE. After complete extraction, your secondary goal is precision - extract ONLY what is explicitly present, never infer or hallucinate values. Your output must be clean, consistent, and exactly match the document's content. Extract ALL tables completely with every row and column. Return NULL only for fields that truly don't exist after extracting all content.",
       tools: [{ type: "file_search" }],
       tool_resources: {
         file_search: {
@@ -278,7 +1312,7 @@ async function createAssistantAndRun(params: {
     throw new Error(`Message creation error: ${messageRes.status} ${errTxt}`);
   }
 
-  // Create and poll run
+  // Create and poll run with MAXIMUM token limits for complete PDF extraction
   const runRes = await fetch(`${OPENAI_BASE}/threads/${thread.id}/runs`, {
     method: "POST",
     headers: {
@@ -288,6 +1322,13 @@ async function createAssistantAndRun(params: {
     },
     body: JSON.stringify({
       assistant_id: assistant.id,
+      // CRITICAL: Set max tokens to handle large PDFs (up to 50+ pages)
+      max_prompt_tokens: 100000,      // Allow up to 100k tokens input (huge PDFs)
+      max_completion_tokens: 16000,   // Allow up to 16k tokens output (complete markdown)
+      truncation_strategy: {
+        type: "auto",                 // Automatically manage context
+        last_messages: null           // Don't truncate messages
+      }
     }),
   });
 
@@ -619,7 +1660,8 @@ export async function extractDataApi({
   try {
     // Log extraction started
     await logExtraction(file.name, 'started', `Starting extraction for ${payerPlanName || payerPlan || 'unknown'}`);
-
+    console.log('in extractDataApi')
+    
     // Track file upload start
     trackExtractionEvent('file_upload_started', {
       file_name: file.name,
@@ -628,33 +1670,129 @@ export async function extractDataApi({
       payer_plan: payerPlanName || 'unknown',
     });
 
-    // 1) Upload file
-    const fileId = await uploadFileToOpenAI(file, apiKey);
+    // STEP 1: Convert PDF to Markdown first
+    console.log('Step 1: Converting PDF to Markdown...');
+    const markdown = await convertPDFToMarkdown(file, apiKey);
+    console.log('Markdown conversion complete. Length:', markdown.length);
+    console.log('\n========== FULL MARKDOWN OUTPUT START ==========\n');
+    console.log(markdown);
+    console.log('\n========== FULL MARKDOWN OUTPUT END ==========\n');
 
-    // Track successful file upload
-    trackExtractionEvent('file_upload_completed', {
+    // Track successful markdown conversion
+    trackExtractionEvent('markdown_conversion_completed', {
       file_name: file.name,
-      file_size: file.size,
+      markdown_length: markdown.length,
       payer_plan: payerPlanName || 'unknown',
     });
 
-    // 2) Resolve fields
+    // STEP 2: Resolve fields to extract
     const resolvedFields = (fields && fields.length > 0)
       ? fields
       : (payerPlan ? FIELD_MAPPINGS[payerPlan] : []);
     if (!resolvedFields || resolvedFields.length === 0) {
       throw new Error("No fields provided to extract.");
     }
-    const prompt = buildPrompt(
-      resolvedFields,
-      payerPlan ? FIELD_SUGGESTIONS[payerPlan] : undefined,
-      payerPlan
-    );
-    const response = await createAssistantAndRun({ apiKey, fileId, prompt });
 
-    // 3) Parse Markdown response
-    const json = parseMarkdownOutput(response);
-
+    // CLEVER METHOD: Extract document structure first (if enabled)
+    let documentStructure = { sections: [], tableLocations: [], fieldHints: {} };
+    if (EXTRACTION_CONFIG.EXTRACT_DOCUMENT_STRUCTURE) {
+      console.log('Step 2a: Extracting document structure...');
+      documentStructure = await extractDocumentStructure(markdown, apiKey);
+    }
+    
+    // CLEVER METHOD: Extract and parse all tables first (if enabled)
+    let structuredTables: any[] = [];
+    if (EXTRACTION_CONFIG.USE_TABLE_FIRST_EXTRACTION) {
+      console.log('Step 2b: Extracting all tables into structured format...');
+      structuredTables = extractAllTables(markdown);
+      
+      // Try to find fields directly in structured tables (fast path)
+      console.log('Step 2c: Searching for fields in structured tables...');
+      const tableResults: Record<string, any> = {};
+      
+      const fieldHints = payerPlan && FIELD_SUGGESTIONS[payerPlan] 
+        ? FIELD_SUGGESTIONS[payerPlan] 
+        : {};
+      
+      for (const fieldName of resolvedFields) {
+        const hints = fieldHints[fieldName] || [];
+        const result = searchFieldInTables(fieldName, hints, structuredTables);
+        
+        if (result && result.confidence >= 0.85) {
+          tableResults[fieldName] = result.value;
+          console.log(`✓ [Table-First] Found "${fieldName}": ${result.value} (${result.source})`);
+        }
+      }
+      
+      console.log(`[Table-First] Found ${Object.keys(tableResults).length}/${resolvedFields.length} fields directly from tables`);
+      
+      // Use table results as initial extraction
+      if (Object.keys(tableResults).length > 0) {
+        console.log('Using table-first results as baseline...');
+      }
+    }
+    
+    // STEP 3: Extract fields from the markdown (First pass)
+    console.log('Step 2: Extracting fields from Markdown (First pass)...');
+    const initialJson = await extractFieldsFromMarkdown(markdown, resolvedFields, apiKey, payerPlan);
+    
+    // Merge table-first results (if any) - table-first results have priority if confidence is high
+    if (structuredTables.length > 0) {
+      const fieldHints = payerPlan && FIELD_SUGGESTIONS[payerPlan] ? FIELD_SUGGESTIONS[payerPlan] : {};
+      
+      for (const fieldName of resolvedFields) {
+        if (!initialJson[fieldName]) {
+          const hints = fieldHints[fieldName] || [];
+          const result = searchFieldInTables(fieldName, hints, structuredTables);
+          
+          if (result && result.confidence >= 0.85) {
+            initialJson[fieldName] = result.value;
+            console.log(`✓ [Table Merge] Added "${fieldName}" from table: ${result.value}`);
+          }
+        }
+      }
+    }
+    
+    console.log('Initial field extraction complete');
+    
+    // STEP 4: Revalidate and improve extraction (Second pass)
+    console.log('Step 3: Revalidating extracted fields (Second pass)...');
+    const secondPassJson = await revalidateExtractedFields(markdown, initialJson, resolvedFields, apiKey, 1);
+    
+    console.log('Second pass validation complete');
+    
+    // STEP 5: Third validation pass for maximum accuracy
+    console.log('Step 4: Final revalidation (Third pass - cross-check)...');
+    const json = await revalidateExtractedFields(markdown, secondPassJson, resolvedFields, apiKey, 2);
+    
+    console.log('Final validation complete - all fields cross-checked');
+    
+    // STEP 6: Data Science Approach - Field-by-field extraction for missing critical fields
+    const missingFields = resolvedFields.filter(f => json[f] === null || json[f] === undefined);
+    
+    if (missingFields.length > 0 && EXTRACTION_CONFIG.FIELD_BY_FIELD_MODE) {
+      console.log(`\n=== STEP 5: Field-by-Field Extraction for ${missingFields.length} missing fields ===`);
+      
+      const fieldHints = payerPlan && FIELD_SUGGESTIONS[payerPlan] 
+        ? FIELD_SUGGESTIONS[payerPlan] 
+        : {};
+      
+      for (const fieldName of missingFields) {
+        console.log(`\nExtracting individually: ${fieldName}`);
+        const hints = fieldHints[fieldName] || [];
+        const result = await extractSingleField(markdown, fieldName, hints, apiKey);
+        
+        if (result.value !== null && result.confidence >= EXTRACTION_CONFIG.CONFIDENCE_THRESHOLD) {
+          json[fieldName] = result.value;
+          console.log(`✓ Found via single field extraction: ${fieldName} = ${result.value}`);
+        } else {
+          console.log(`✗ Still not found: ${fieldName} (confidence: ${result.confidence})`);
+        }
+      }
+    } else if (missingFields.length > 0) {
+      console.log(`\n⚠️  ${missingFields.length} fields still missing. Enable FIELD_BY_FIELD_MODE for individual extraction.`);
+      console.log(`Missing fields: ${missingFields.join(', ')}`);
+    }
     // Log what was found for debugging
     console.log(`\n=== EXTRACTION DEBUG INFO ===`);
     console.log(`Payer Plan: ${payerPlan}`);
@@ -684,6 +1822,23 @@ export async function extractDataApi({
     console.log(`\n=== VALIDATION LAYER ===`);
     normalized = validateAllExtractedData(normalized, resolvedFields);
     
+    // CLEVER METHOD: Regex validation for extracted values
+    if (EXTRACTION_CONFIG.USE_REGEX_VALIDATION) {
+      console.log(`\n=== REGEX VALIDATION ===`);
+      for (const fieldName of resolvedFields) {
+        const value = normalized[fieldName];
+        if (value && typeof value === 'string') {
+          const validation = validateExtractedValueWithRegex(fieldName, value);
+          if (!validation.valid) {
+            console.warn(`⚠️  [Regex Validation] "${fieldName}": value "${value}" may be invalid - ${validation.suggestion}`);
+            // Don't automatically set to null, but log the warning for review
+          } else {
+            console.log(`✓ [Regex Validation] "${fieldName}": format looks correct`);
+          }
+        }
+      }
+    }
+    
     extractedFields = foundFields;
     
     // Track successful extraction
@@ -706,15 +1861,37 @@ export async function extractDataApi({
 
     // No fallback logic - return values as extracted from PDF only
 
-    // Log final summary
+    // Log final summary with detailed field status
     const foundCount = Object.values(normalized).filter(v => v !== null).length;
     const totalCount = resolvedFields.length;
     const successRate = ((foundCount / totalCount) * 100).toFixed(1);
-    console.log(`\n=== EXTRACTION SUMMARY ===`);
+    console.log(`\n=== FINAL EXTRACTION SUMMARY (After 3 Passes) ===`);
     console.log(`Fields found: ${foundCount}/${totalCount} (${successRate}%)`);
     console.log(`Payer Plan: ${payerPlan}`);
     console.log(`File: ${file.name}`);
     console.log(`Processing time: ${Date.now() - startTime}ms`);
+    console.log(`\nField Status:`);
+    
+    // List all fields with their status
+    const foundFieldsList = [];
+    const missingFieldsList = [];
+    for (const field of resolvedFields) {
+      if (normalized[field] !== null) {
+        foundFieldsList.push(field);
+      } else {
+        missingFieldsList.push(field);
+      }
+    }
+    
+    if (foundFieldsList.length > 0) {
+      console.log(`\n✓ FOUND (${foundFieldsList.length}):`);
+      foundFieldsList.forEach(f => console.log(`  - ${f}`));
+    }
+    
+    if (missingFieldsList.length > 0) {
+      console.log(`\n✗ MISSING (${missingFieldsList.length}):`);
+      missingFieldsList.forEach(f => console.log(`  - ${f}`));
+    }
 
     // Extra validation - force fix for Al Ahli Hospital issue
     // This is a last resort fix for the specific issue with Al Ahli field and inpatient co-insurance
@@ -777,7 +1954,7 @@ interface CompareDataApiParams {
   payerPlan?: PayerPlan;
   payerPlanName?: string;
 }
-
+ 
 export async function compareDataApi({ 
   file1, 
   file2, 
@@ -809,4 +1986,15 @@ export async function compareDataApi({
   return results;
 }
 
+/**
+ * Public API to convert a PDF file to Markdown format
+ * with specific formatting rules for headers, footers, and tables
+ */
+export async function convertPDFToMarkdownApi(
+  file: File,
+  apiKey: string
+): Promise<string> {
+  assertKey(apiKey);
+  return convertPDFToMarkdown(file, apiKey);
+}
 

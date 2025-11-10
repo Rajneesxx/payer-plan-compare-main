@@ -26,13 +26,13 @@ export const ALKOOT_FIELDS = [
   "Category", 
   "Effective Date",
   "Expiry Date", 
-  "Provider-specific co-insurance at Al Ahli Hospital",
+  "Al Ahli Hospital",
   "Co-insurance on all inpatient treatment", 
   "Deductible on consultation",
   "Co-insurance",
-  "Vaccination & Immunization",
-  "Psychiatric treatment & Psychotherapy",
-  "Pregnancy & Childbirth", 
+  "Vaccinations & immunizations",
+  "Psychiatric treatment and Psychotherapy",
+  "Pregnancy and childbirth", 
   "Dental Benefit", 
   "Optical Benefit"
 ];
@@ -89,7 +89,17 @@ export const FIELD_SUGGESTIONS = {
     "Category": [],
     "Effective Date": [],
     "Expiry Date": [],
-    "Provider-specific co-insurance at Al Ahli Hospital": [],
+    "Al Ahli Hospital": [
+      "Al-Ahli Hospital",
+      "Al Ahli",
+      "Al-Ahli",
+      "Provider-specific co-insurance at Al Ahli Hospital",
+      "Provider Specific Co-insurance",
+      "Additional co-insurance at Al Ahli",
+      "Additional deductible at Al Ahli",
+      "Al Ahli Hospital co-insurance",
+      "Co-insurance Al Ahli Hospital"
+    ],
     "Co-insurance on all inpatient treatment": [
       "Co-insurance on all inpatient treatments",
       "In-patient co-insurance"
@@ -102,18 +112,46 @@ export const FIELD_SUGGESTIONS = {
       "Co-insurance",
       "Out-patient co-insurance"
     ],
-    "Vaccination & Immunization": [
-      "Vaccination & Immunizations"
+    "Vaccinations and Immunizations": [
+      "Vaccination & Immunization",
+      "Vaccination & Immunizations",
+      "Vaccination and Immunization",
+      "Vaccination and Immunizations",
+      "Vaccination/Immunization",
+      "Vaccinations & Immunizations"
     ],
-    "Psychiatric treatment & Psychotherapy": [
-      "Psychiatric treatment & Psychotherapies"
+    "Psychiatric treatment and Psychotherapy": [
+      "Psychiatric treatment & Psychotherapy",
+      "Psychiatric treatment & Psychotherapies",
+      "Psychiatric treatment and Psychotherapies",
+      "Psychiatric Treatment",
+      "Psychotherapy",
+      "Mental Health",
+      "Mental health treatment",
+      "Psychiatric care",
+      "Psychological treatment",
+      "Psychiatry",
+      "Psychiatric services",
+      "Mental health coverage"
     ],
-    "Pregnancy and Childbirth": [
+    "Pregnancy and childbirth": [
+      "Pregnancy & Childbirth",
+      "Pregnancy and Childbirth",
       "Pregnancy & Childbirths",
-      "Pregnancy and childbirth(in accordance with Hamad Protocol/s)"
+      "Pregnancy and Child birth",
+      "Pregnancy and childbirth(in accordance with Hamad Protocol/s)",
+      "Maternity"
     ],
-    "Dental Benefit": [],
-    "Optical Benefit": []
+    "Dental Benefit": [
+      "Dental Coverage",
+      "Dental Benefits"
+    ],
+    "Optical Benefit": [
+      "Optical Coverage",
+      "Vision Coverage",
+      "Optical Benefits",
+      "Vision Benefits"
+    ]
   }
 };
 
