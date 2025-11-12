@@ -30,7 +30,7 @@ const Index = () => {
   const [comparisonResults, setComparisonResults] = useState<ComparisonResult[] | null>(null);
   const [customPlanName, setCustomPlanName] = useState<string>("");
   const [customFields, setCustomFields] = useState<string[]>([""]);
-
+console.log('files', files)
   const { toast } = useToast();
   const resolvedCustomFields = customFields.filter((f) => f.trim() !== "");
 
@@ -48,7 +48,7 @@ const Index = () => {
     if (!openAiKey) return toast({ title: "Enter Rapid-Secret key", variant: "destructive" });
     if (uploadMode === "compare" && files.length < 2)
       return toast({ title: "Upload two files for comparison", variant: "destructive" });
-
+console.log('++++++++++++++++++++++++++++++')
     setIsProcessing(true);
     const isCustom = payerPlan === PAYER_PLANS.CUSTOM;
 

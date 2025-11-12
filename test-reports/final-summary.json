@@ -1,0 +1,25 @@
+{
+  "success": false,
+  "totalIterations": 1,
+  "finalAccuracy": 92.3076923076923,
+  "bestAccuracy": 92.3076923076923,
+  "totalTime": 633144,
+  "iterationSummaries": [
+    {
+      "iteration": 1,
+      "accuracy": 92.3076923076923,
+      "fieldsCorrect": 12,
+      "fieldsFailed": 1
+    }
+  ],
+  "allImprovements": [],
+  "remainingIssues": [
+    {
+      "field": "Psychiatric treatment and Psychotherapy",
+      "expected": "QAR 3,500. Prior-approval required.",
+      "actual": "QAR 3,500",
+      "match": false,
+      "reason": "Partial match - formatting difference"
+    }
+  ]
+}

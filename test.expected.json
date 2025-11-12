@@ -1,0 +1,26 @@
+{
+  "context": "Al Ahli Hospital insurance document - ALKOOT provider",
+  "payerPlan": "ALKOOT",
+  "pdfName": "AL SAFELEYAH REAL ESTATE INVESTMENT - CAT 1.pdf",
+  "expectedFields": {
+    "Policy Number": "AK/HC/00064/7/1",
+    "Category": "AL SAFELEYAH REAL ESTATE INVESTMENT",
+    "Effective Date": "01 November 2025",
+    "Expiry Date": "31 October 2026",
+    "Al Ahli Hospital": "Nil",
+    "Co-insurance on all inpatient treatment": "Nil",
+    "Deductible on consultation": "Nil",
+    "Co-insurance": "Nil",
+    "Vaccinations & immunizations": "Covered",
+    "Psychiatric treatment and Psychotherapy": "QAR 3,500. Prior-approval required.",
+    "Pregnancy and childbirth": "Not Covered",
+    "Dental Benefit": "QAR 7,500, 20% co-insurance, nil deductible",
+    "Optical Benefit": "Not Covered"
+  },
+  "notes": {
+    "Al Ahli Hospital": "Provider-specific co-insurance field - should be 'Nil' not the full provider list",
+    "Co-insurance": "General/outpatient co-insurance, not inpatient-specific",
+    "Dental Benefit": "Complete value including limit, co-insurance, and deductible combined"
+  }
+}
+

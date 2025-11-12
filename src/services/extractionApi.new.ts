@@ -43,16 +43,13 @@
  *    - Model fallback strategy
  */
 
-//  OpenAI extraction service - SIMPLIFIED VERSION
-// Using pdfjs-dist for text extraction + direct OpenAI API calls
+//  OpenAI extraction service using Responses API with attachments + file_search
+// Minimal public surface retained: extractDataApi and compareDataApi
 import { FIELD_MAPPINGS, PAYER_PLANS, type PayerPlan, type ExtractedData, type ComparisonResult } from "@/constants/fields";
 import { FIELD_SUGGESTIONS } from "@/constants/fields";
 import { logExtraction } from "@/utils/logging";
-// @ts-ignore - pdfjs-dist has type issues with ESM
-import * as pdfjsLib from 'pdfjs-dist';
-
-// Set worker path for pdfjs
-pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+// @ts-ignore - pdf-parse has type issues with ESM
+import pdfParse from 'pdf-parse';
 
 declare global {
   interface Window {
@@ -82,7 +79,7 @@ const OPENAI_CHAT_ENDPOINT = `${OPENAI_BASE}/chat/completions`;
 // Model configuration - data science approach: use best model for reasoning
 const EXTRACTION_CONFIG = {
   // gpt-5 has better reasoning for complex document analysis
-  PRIMARY_MODEL: "gpt-5-mini",          // Best for complex reasoning and field extraction
+  PRIMARY_MODEL: "gpt-5",          // Best for complex reasoning and field extraction
   FALLBACK_MODEL: "gpt-5",         // Fallback model
   MARKDOWN_MODEL: "gpt-5",         // Good for PDF to markdown conversion
   USE_STRUCTURED_OUTPUT: true,     // Force JSON schema for consistency
@@ -812,48 +809,190 @@ async function extractFieldsFromMarkdown(
     }
   }
 
-  // Few-shot examples to guide the model (data science approach)
+  // Few-shot examples based on ACTUAL markdown structure from real insurance PDFs
   const fewShotExamples = `
-EXAMPLE 1 - Table Extraction:
-If markdown contains:
-| Benefit | Coverage |
-|---------|----------|
-| Dental Benefit | QAR 500 per year |
-| Optical Benefit | Not covered |
+REAL-WORLD EXAMPLES (Based on Actual Insurance PDF Markdown):
 
-Then extract:
+EXAMPLE 1 - Extracting VALUE from long Coverage/Notes column:
+Markdown shows:
+| Benefit | Coverage/Notes |
+|---------|----------------|
+| Psychiatric treatment and Psychotherapy | This is collectively all diagnosable mental disorders or health conditions that are characterized by alterations in thinking, mood, or behavior (or some combination thereof) associated with distress and/or impaired functioning. The condition must be clinically significant and not related to bereavement, relationship or academic problems, acculturation difficulties or work pressure. Psychotherapy treatment is only covered where member is initially diagnosed by a psychiatrist and referred to a clinical psychologist for future treatment. In addition, out-patient psychotherapy treatment is initially restricted to 10 sessions after which, treatment must be reviewed by the psychiatrist. Should further sessions be required, a progress report must be submitted which indicates the medical necessity for any further treatment. Limit: QAR 3,500. Prior-approval required. Failure to obtain written prior-approval may result in claim rejection |
+
+CORRECT extraction (find the LIMIT/VALUE in the long text):
 | Field Name | Value |
 |------------|-------|
-| Dental Benefit | QAR 500 per year |
-| Optical Benefit | Not covered |
+| Psychiatric treatment and Psychotherapy | QAR 3,500 |
 
-EXAMPLE 2 - Provider-Specific Table:
-If markdown contains a table titled "Provider Specific Co-insurance":
-| Provider | Co-insurance |
-|----------|--------------|
-| Al Ahli Hospital | 10% |
-| Other providers | 20% |
+❌ WRONG: Don't extract the entire "Coverage/Notes" text!
+✅ CORRECT: Look for "Limit: QAR X" or "Coverage: X" and extract just that value
 
-Then for "Al Ahli Hospital" field, extract: 10%
+EXAMPLE 2 - Extract "Covered" status from long description:
+Markdown shows:
+| Benefit | Coverage/Notes |
+|---------|----------------|
+| Vaccinations and immunizations | All basic immunizations and booster injections required under regulation of Ministry of Public Health in Qatar. The cost of consultation for administering the vaccine is also included. Covered for newborn and children with no age limit — Covered as per MOPH schedule of vaccinations |
 
-EXAMPLE 3 - Field Name Variations:
-If searching for "Psychiatric treatment and Psychotherapy" and document has:
-| Benefit | Coverage |
-|---------|----------|
-| Psychiatric treatment & Psychotherapy | QAR 1000 |
-
-Then extract: QAR 1000 (even though "&" vs "and" differs)
-
-EXAMPLE 4 - Missing Field:
-If searching for "Dental Coverage" and it's truly not in any table or text:
+CORRECT extraction:
 | Field Name | Value |
 |------------|-------|
-| Dental Coverage | null |
+| Vaccinations & immunizations | Covered |
+
+Look for "Coverage: Covered" or "Covered" at the end - ignore the long description!
+
+EXAMPLE 3 - Extract "Not Covered" status:
+Markdown shows:
+| Benefit | Coverage/Notes |
+|---------|----------------|
+| Pregnancy and childbirth (in accordance with Hamad Protocol/s) | Maternity benefits include ante-natal and post-natal care up to six (6) weeks post-delivery, childbirth (normal delivery or caesarian section), miscarriage or legal abortion, including any and all complications arising there from. This benefit is only available for eligible married female once per policy year. Maternity benefits include consultations, laboratory, radiology, medications, and any other covered medical expense related to the pregnancy or delivery, subject to the benefit limit mentioned in the Table of Benefits. Maternity benefit is also applicable to expenses incurred for room, board and general nursing care, special hospital services and ordinary nursing care of the baby while the mother is confined in the hospital, and for charges made by the physician, or registered midwife. This benefit only available for eligible married females per policy year. Coverage: Not covered |
+
+CORRECT extraction:
+| Field Name | Value |
+|------------|-------|
+| Pregnancy and childbirth | Not Covered |
+
+Find "Coverage: Not covered" and extract "Not Covered" - ignore the long description!
+
+EXAMPLE 4 - Complete benefit with multiple components on separate row:
+Markdown shows:
+| Benefit | Coverage/Notes |
+|---------|----------------|
+| Dental benefit | This benefit provides for dental consultation, extraction, composite and amalgam fillings, root canal treatment, scaling, bridgework, non-precious crowns (ceramic or metallic only) and the treatment of gum disease. Note: Dentures, dental veneers, dental implants, space maintainers, mouth guards and teeth whitening form part of General Exclusions and are not covered by this benefit |
+| Dental benefit limit and cost-sharing | QAR 7,500, 20% co-insurance, nil deductible |
+
+CORRECT extraction:
+| Field Name | Value |
+|------------|-------|
+| Dental Benefit | QAR 7,500, 20% co-insurance, nil deductible |
+
+Look for "limit and cost-sharing" row for the complete value!
+
+EXAMPLE 5 - Missing Field:
+If searching for "Field Name" and it's truly not in any table or text:
+| Field Name | Value |
+|------------|-------|
+| Field Name | null |
 `;
 
-  const prompt = `You are an expert insurance policy data extraction assistant with PERFECT ACCURACY.
+  const prompt = `You are an AI agent helping determine insurance coverage status and payment requirements for medical treatments/services.
 
-You will be given a MARKDOWN document (converted from a PDF insurance policy). Your task is to extract specific fields from this markdown with 100% precision.
+Your role: Help users quickly understand IF a treatment is covered, and if so, what payment is required.
+
+You will be given a MARKDOWN document (converted from a PDF insurance policy). Your task is to extract the exact coverage status with 100% precision.
+
+DOCUMENT CONTEXT: This is an insurance policy document which is used by Al Ahli hospital
+
+
+Many insurance documents contain two things:
+1. DEFINITION/DESCRIPTION of what the field means (usually lengthy text explaining the concept)
+2. ACTUAL VALUE/STATUS for that field (the coverage status or amount)
+
+YOU MUST EXTRACT #2 (THE VALUE), NEVER #1 (THE DESCRIPTION)!
+
+EXAMPLES OF CORRECT EXTRACTION:
+
+❌ WRONG (Description):
+Field: "Deductible on consultation"
+Extracted: "A fixed amount of money which insured member is required to pay to providers..."
+→ This is a DEFINITION, not the actual value!
+
+✅ CORRECT (Value):
+Field: "Deductible on consultation"
+Extracted: "Nil"
+
+
+❌ WRONG (Description):
+Field: "Vaccinations & immunizations"
+Extracted: "All basic immunizations and booster injections required under regulation..."
+→ This is describing WHAT vaccinations are, not IF they're covered!
+
+✅ CORRECT (Value):
+Field: "Vaccinations & immunizations"  
+Extracted: "Covered" or "Not Covered" or "QAR 500" or "Covered as per MOPH schedule"
+→ This tells us the COVERAGE STATUS!
+
+❌ WRONG (Long explanation):
+Field: "Psychiatric treatment and Psychotherapy"
+Extracted: "This is collectively all diagnosable mental disorders or health conditions..."
+→ This defines what psychiatric treatment IS!
+
+✅ CORRECT (Value):
+Field: "Psychiatric treatment and Psychotherapy"
+Extracted: "Covered" or "QAR 3,500" or "Not Covered" or "Covered up to QAR 3,500"
+→ This tells us the COVERAGE and LIMIT!
+
+**HOW TO DISTINGUISH DESCRIPTIONS FROM VALUES:**
+
+DESCRIPTIONS are:
+- Long explanatory text
+- Define what something means
+- Start with phrases like "This is...", "These are...", "A fixed amount...", "All basic..."
+- Explain conditions, medical terms, or procedures
+
+VALUES are:
+- Short and specific
+- Coverage status: "Covered", "Not Covered", "Nil", "Not applicable"
+- Amounts: "QAR 500", "QAR 7,500, 20% co-insurance"
+- Percentages: "20%", "10% co-insurance"
+- Simple combinations: "Covered up to QAR 3,500"
+- Dates: "01 November 2025"
+
+**EXTRACTION STRATEGY:**
+
+1. Find the field name in a table or section
+2. Look at the adjacent cell/value
+3. Ask yourself: "Is this telling me WHAT it is, or HOW MUCH/WHETHER it's covered?"
+4. If it's longer than ~50 characters and explains the concept → SKIP IT, keep looking
+5. Find the SHORT, SPECIFIC value that answers: "Is it covered? How much?"
+
+**VALID VALUE FORMATS:**
+
+**CRITICAL SIMPLIFICATION RULES:**
+
+1. **For "Nil" values**:
+   - If you see "Nil", "nil", "NIL" → return "Nil"
+   - If you see "Not applicable" → return "Nil"
+   - DO NOT include descriptions when value is Nil
+
+2. **For Coverage Status (when NO QAR/% amount)**:
+   - If covered with no specific amount → return "Covered"
+   - If not covered → return "Not Covered"
+   - DO NOT include long descriptions, just the status
+
+3. **For Coverage with QAR Amount or Percentage**:
+   - If QAR amount mentioned → include the QAR amount
+   - If percentage mentioned → include the percentage
+   - If conditions mentioned (prior-approval) → include them
+   - Example: "QAR 3,500. Prior-approval required."
+
+4. **Capitalization**:
+   - Use "Not Covered" (capital C) not "Not covered"
+   - Use "Covered" (capital C) not "covered"
+   - Use "Nil" (capital N) not "nil"
+
+**EXAMPLES:**
+
+For coverage fields (Vaccinations, Psychiatric, Pregnancy, etc.):
+✅ "Covered" (if covered with no specific amount/limit)
+✅ "Not Covered" (not "Not covered" or "Not covered.")
+✅ "QAR 3,500. Prior-approval required." (if there's a limit + conditions)
+✅ "Covered as per MOPH schedule" (if specific protocol mentioned)
+
+For amount fields (Dental, Optical, etc.):
+✅ "QAR 7,500, 20% co-insurance, nil deductible" (complete package)
+✅ "Not Covered" (if not covered)
+
+For deductible/co-insurance fields:
+✅ "Nil" (not "nil" or "Nil.")
+✅ "QAR 50" (if there's an amount)
+✅ "20%" (if there's a percentage)
+
+**NEVER extract:**
+❌ Definitions that start with "This is...", "These are...", "A fixed amount..."
+❌ Medical explanations of conditions
+❌ Lengthy procedure descriptions
+❌ Terms and conditions text
+❌ Prior approval requirements (unless that's specifically the value)
 
 ${fewShotExamples}
 
@@ -904,26 +1043,104 @@ CRITICAL EXTRACTION RULES:
      • "Psychiatric treatment and Psychotherapy" = "Psychiatric treatment and Psychotherapy"
    - Always return the EXACT field name as requested (with exact capitalization and & if specified)
 
-6. **CRITICAL FIELDS - FREQUENTLY MISSED**:
+6. **FIELD PRIORITIZATION - CRITICAL**:
+   - **OUTPATIENT (OPD) PRIORITY**: When a field name could apply to both outpatient and inpatient:
+     * Search OUTPATIENT sections FIRST
+     * "Co-insurance" (general) → Look in OPD/outpatient section BEFORE inpatient
+     * "Deductible on consultation" → Prioritize consultation/OPD deductibles
+   - Only search inpatient sections if field explicitly mentions "inpatient"
+
+7. **CRITICAL FIELDS - FREQUENTLY MISSED**:
    
-   A. **Al Ahli Hospital** (if requested):
-      - This field is FREQUENTLY MISSED - pay extra attention
-      - Look for a table titled "Provider Specific Co-insurance/deductible" or similar
-      - Table may say: "Additional co-insurance/deductible will apply on all services in below mentioned providers"
-      - Find the row where "Al Ahli Hospital" or "Al-Ahli Hospital" is mentioned
-      - Extract the value in the cell BESIDE/NEXT TO "Al Ahli Hospital" (same row, next column)
-      - The value might be: a percentage (e.g., "10%"), an amount (e.g., "QAR 100"), or "Not applicable"
-      - DO NOT confuse with general co-insurance - this must be SPECIFIC to Al Ahli Hospital
-      - If the special table doesn't exist, return 'Not applicable'
+   A. **Policy Number**:
+      - Look in Policy Details section
+      - May be labeled: "Policy Number", "Policy No", "Policy ID"
+      - Extract complete alphanumeric code (any format accepted)
+      - Usually at top of document or in policy details
    
-   B. **Psychiatric treatment and Psychotherapy** (if requested):
-      - This field is FREQUENTLY MISSED - search thoroughly
-      - Try BOTH variations: "Psychiatric treatment and Psychotherapy" AND "Psychiatric treatment & Psychotherapy"
-      - Search in multiple sections: main benefits table, exclusions, limitations, mental health
-      - May appear as: "Psychiatric Treatment", "Psychotherapy", "Mental Health Coverage"
-      - Look for: coverage amounts, limits, exclusions, or "Not Covered" statements
-      - Be case-insensitive when searching (e.g., "childbirth" vs "Childbirth")
-      - Search the ENTIRE document - check every table and text section
+   B. **Category**:
+      - Look for the plan/category name in header or policy details
+      - May be labeled: "Category", "Plan", "Policy Type"
+      - Extract the PLAN NAME (e.g., "AL SAFELEYAH REAL ESTATE INVESTMENT")
+      - Don't confuse with coverage level (CAT 1, CAT 2, etc.)
+   
+   C. **Al Ahli Hospital** (Provider-specific co-insurance):
+      - Look for "Provider Specific Co-insurance" or similar special table
+      - If table lists multiple providers with "Nil", return just "Nil"
+      - Do NOT return the full provider list - just the value
+      - If no special table exists, return "Nil" or "Not applicable"
+   
+   D. **Co-insurance** (General/Outpatient) AND **Deductible on consultation** (SAME CELL):
+      - ⚠️ CRITICAL: For ALKOOT plans, co-insurance and deductible on consultation are in THE SAME TABLE CELL
+      - They share the same value in the outpatient section
+      - **SEARCH STRATEGY**:
+        * Look in OUTPATIENT section
+        * Find a cell that mentions BOTH "co-insurance" AND "deductible"
+        * This single cell value applies to BOTH fields
+      - **VALUE EXTRACTION RULES**:
+        * If cell says "Nil" → extract "Nil" for both fields
+        * If cell has QAR amount or % → extract that for both fields
+        * If cell describes coverage → extract the same value for both
+      - **SIMPLIFIED OUTPUT**:
+        * If value is just "Nil" → return "Nil"
+        * If value contains description but says "Nil" → return "Nil"
+        * If there's a QAR amount or % → return that amount/percentage
+        * If it's "Covered" with no amount → return "Covered"
+      - Examples:
+        * Cell: "Nil" → Extract: "Nil"
+        * Cell: "10% co-insurance, QAR 50 deductible" → Extract: "10%, QAR 50"
+        * Cell: "Not applicable" → Extract: "Nil"
+   
+   F. **Vaccinations & immunizations**:
+      - Flexible matching: "Vaccination", "Immunization" in ANY combination
+      - Accept &, and, /, comma separators
+      - Check: Special benefits, preventive care, outpatient sections
+      - ⚠️ EXTRACT COVERAGE STATUS, not description of what vaccinations are
+      - **SIMPLIFICATION RULE**:
+        * If covered with NO QAR amount → return "Covered"
+        * If covered with QAR amount → return "QAR X"
+        * If not covered → return "Not Covered"
+      - ❌ WRONG: "Covered as per MOPH schedule of vaccinations. All basic immunizations..." (too long!)
+      - ✅ CORRECT: "Covered" (simple, clean)
+   
+   G. **Psychiatric treatment and Psychotherapy**:
+      - Flexible matching for mental health coverage
+      - Try variations: "Psychiatric", "Psychotherapy", "Mental Health"
+      - Check: benefits tables, exclusions, limitations
+      - ⚠️ EXTRACT COVERAGE LIMIT/STATUS, not definition of mental health conditions
+      - **EXTRACTION PRIORITY**:
+        * Look for "Limit: QAR X" → extract "QAR X. Prior-approval required." (if prior-approval mentioned)
+        * If QAR amount AND prior-approval → include both: "QAR 3,500. Prior-approval required."
+        * If covered with no amount → return "Covered"
+        * If not covered → return "Not Covered"
+      - ❌ WRONG: "This is collectively all diagnosable mental disorders..." (definition!)
+      - ✅ CORRECT: "QAR 3,500. Prior-approval required." (value + condition)
+   
+   H. **Pregnancy and childbirth**:
+      - Look in maternity section
+      - May be labeled: "Pregnancy", "Childbirth", "Maternity"
+      - ⚠️ EXTRACT COVERAGE STATUS, not definition
+      - Common values: "Covered", "Not Covered", "Covered in accordance with Hamad Protocol"
+      - ✅ EXTRACT: Coverage status (short and specific)
+   
+   I. **Dental Benefit**:
+      - **IMPORTANT**: Extract COMPLETE benefit (limit + co-insurance + deductible)
+      - Look for ALL components: coverage limit, co-insurance %, deductible amount
+      - Format: "QAR X, Y% co-insurance, Z deductible"
+      - Example: "QAR 7,500, 20% co-insurance, nil deductible"
+      - Do NOT extract just one component - get the complete package
+
+🎯 FINAL REMINDER BEFORE YOU EXTRACT:
+
+Before you extract each field, ask yourself:
+1. "Is this a DEFINITION/DESCRIPTION or an ACTUAL VALUE?"
+2. "If a user asks 'Is this covered?', does this text answer that question?"
+3. "Is this text longer than 50 characters and explaining what something means?"
+
+If YES to #3 → It's a definition, SKIP IT and find the actual value!
+If NO to #3 and YES to #2 → Perfect, extract this value!
+
+Remember: You're helping users understand coverage status and costs, not teaching them insurance terminology!
 
 OUTPUT FORMAT (MUST FOLLOW EXACTLY):
 \`\`\`markdown
@@ -936,7 +1153,8 @@ OUTPUT FORMAT (MUST FOLLOW EXACTLY):
 IMPORTANT:
 - Return ONLY the markdown table, no other text or explanations
 - Use 'null' for missing fields (without quotes)
-- Keep all original formatting from the document
+- Extract SHORT, SPECIFIC values (coverage status, amounts, dates)
+- NEVER extract long definitions or descriptions
 - Match field names EXACTLY as provided below
 
 ${hintsSection}
@@ -998,7 +1216,191 @@ Return ONLY the markdown table with exactly 2 columns: Field Name and Value.`;
 
   // Parse the markdown table response
   const extractedData = parseMarkdownTable(content);
-  return extractedData;
+  
+  // Post-extraction validation: Convert descriptions to proper values
+  let validatedData = await validateAndCleanExtractedValues(extractedData, apiKey);
+  
+  // Apply ALKOOT-specific rule: Co-insurance and Deductible on consultation share the same value
+  validatedData = applyAlkootSpecificRules(validatedData);
+  
+  return validatedData;
+}
+
+/**
+ * Apply ALKOOT-specific extraction rules
+ * For ALKOOT plans, co-insurance and deductible on consultation are in the same cell
+ */
+function applyAlkootSpecificRules(data: Record<string, any>): Record<string, any> {
+  const coInsurance = data['Co-insurance'];
+  const deductible = data['Deductible on consultation'];
+  
+  // If co-insurance has a value but deductible doesn't, copy co-insurance to deductible
+  if (coInsurance && (!deductible || deductible === 'null' || deductible === null)) {
+    console.log(`[ALKOOT Rule] Copying Co-insurance value "${coInsurance}" to Deductible on consultation`);
+    data['Deductible on consultation'] = coInsurance;
+  }
+  // If deductible has a value but co-insurance doesn't, copy deductible to co-insurance
+  else if (deductible && (!coInsurance || coInsurance === 'null' || coInsurance === null)) {
+    console.log(`[ALKOOT Rule] Copying Deductible on consultation value "${deductible}" to Co-insurance`);
+    data['Co-insurance'] = deductible;
+  }
+  // If both have values but they're different, log a warning
+  else if (coInsurance && deductible && coInsurance !== deductible) {
+    console.warn(`[ALKOOT Rule] ⚠️  Co-insurance (${coInsurance}) and Deductible (${deductible}) have different values. They should be the same!`);
+    // Use co-insurance value as the authoritative one
+    console.log(`[ALKOOT Rule] Using Co-insurance value for both fields`);
+    data['Deductible on consultation'] = coInsurance;
+  }
+  // If both are missing, that's fine (will be null)
+  
+  return data;
+}
+
+/**
+ * Post-extraction validation: Check if extracted values are descriptions
+ * and convert them to proper values (Covered/Not Covered/amounts)
+ */
+async function validateAndCleanExtractedValues(
+  extractedData: Record<string, any>,
+  apiKey: string
+): Promise<Record<string, any>> {
+  console.log('[Validation] Checking extracted values for descriptions...');
+  
+  const cleanedData: Record<string, any> = {};
+  const fieldsToFix: string[] = [];
+  
+  // Check each field
+  for (const [fieldName, fieldValue] of Object.entries(extractedData)) {
+    if (!fieldValue || fieldValue === 'null') {
+      cleanedData[fieldName] = fieldValue;
+      continue;
+    }
+    
+    const valueStr = String(fieldValue);
+    
+    // Check if it's a description (long text > 100 chars or starts with description patterns)
+    // OR if it needs simplification (like "Covered as per...")
+    const isDescription = (
+      valueStr.length > 100 ||
+      valueStr.toLowerCase().startsWith('this is') ||
+      valueStr.toLowerCase().startsWith('these are') ||
+      valueStr.toLowerCase().startsWith('a fixed amount') ||
+      valueStr.toLowerCase().startsWith('all basic') ||
+      valueStr.toLowerCase().includes('collectively all diagnosable')
+    );
+    
+    // Check if it needs simplification (even if not a full description)
+    const needsSimplification = (
+      valueStr.toLowerCase().includes('covered as per') ||
+      valueStr.toLowerCase().includes('failure to obtain written prior-approval may result in claim rejection') ||
+      valueStr.toLowerCase().includes('; specific procedures') ||
+      valueStr.toLowerCase().includes('unless specified in') ||
+      valueStr.toLowerCase().includes('; excluding') ||
+      (valueStr.toLowerCase().includes('not covered') && valueStr.includes(';')) ||
+      (valueStr.toLowerCase().includes('covered') && valueStr.includes(';') && valueStr.length > 20)
+    );
+    
+    if (isDescription || needsSimplification) {
+      if (isDescription) {
+        console.log(`[Validation] ⚠️  Field "${fieldName}" appears to be a description (${valueStr.length} chars)`);
+      } else {
+        console.log(`[Validation] ⚠️  Field "${fieldName}" needs simplification`);
+      }
+      fieldsToFix.push(fieldName);
+      cleanedData[fieldName] = valueStr; // Keep for now, will fix below
+    } else {
+      cleanedData[fieldName] = fieldValue;
+    }
+  }
+  
+  // If no descriptions found, return as-is
+  if (fieldsToFix.length === 0) {
+    console.log('[Validation] ✅ All values are clean (no descriptions found)');
+    return cleanedData;
+  }
+  
+  console.log(`[Validation] 🔧 Found ${fieldsToFix.length} field(s) with descriptions, converting to proper values...`);
+  
+  // Convert descriptions to proper values using LLM
+  for (const fieldName of fieldsToFix) {
+    const description = cleanedData[fieldName];
+    
+    const conversionPrompt = `You are a data cleaner. You received a DESCRIPTION instead of a VALUE for the field "${fieldName}".
+
+Your task: Extract the actual VALUE from this description.
+
+Description text:
+"${description}"
+
+RULES FOR EXTRACTING VALUE:
+
+1. **For "Nil" values**:
+   - If mentions "Nil" → extract "Nil"
+   - If says "Not applicable" → extract "Nil"
+
+2. **For Coverage Status (NO QAR/% amount)**:
+   - If covered with NO specific amount → extract "Covered"
+   - If not covered → extract "Not Covered" (capital C)
+
+3. **For Coverage with QAR Amount + Conditions**:
+   - If "Limit: QAR X" AND "Prior-approval required" → extract "QAR X. Prior-approval required."
+   - Example: "QAR 3,500. Prior-approval required."
+
+4. **For Complex Benefits (Dental)**:
+   - Extract complete value: "QAR X, Y% co-insurance, Z deductible"
+
+5. **Simplification**:
+   - Remove long descriptions, keep only the value
+   - Use proper capitalization: "Not Covered", "Covered", "Nil"
+   - Remove trailing periods EXCEPT when text ends with "required."
+
+Return ONLY the extracted value, nothing else. No explanations.
+
+Examples:
+Input: "This is collectively all diagnosable mental disorders... Limit: QAR 3,500. Prior-approval required. Failure to obtain..."
+Output: QAR 3,500. Prior-approval required.
+
+Input: "All basic immunizations and booster injections required under regulation... Coverage: Covered"
+Output: Covered
+
+Input: "Maternity benefits include ante-natal and post-natal care... Coverage: Not covered"
+Output: Not Covered
+
+Input: "A fixed amount of money which insured member is required to pay..."
+Output: Nil
+
+Input: "Covered as per MOPH schedule of vaccinations. All basic immunizations..."
+Output: Covered
+
+Input: "QAR 3,500. Prior-approval required. Failure to obtain written prior-approval may result in claim rejection"
+Output: QAR 3,500. Prior-approval required.
+
+CRITICAL SIMPLIFICATION RULES:
+1. If text says "Covered as per..." → return just "Covered"
+2. If text has "Prior-approval required" → keep it, BUT remove "Failure to obtain..." after it
+3. Remove any text about claim rejection, failure consequences, etc.
+
+Now extract the value from the description above:`;
+
+    try {
+      const result = await callGPT5Responses({
+        apiKey,
+        userPrompt: conversionPrompt,
+        responseFormat: 'text'
+      });
+      
+      const cleanedValue = result.content.trim();
+      console.log(`[Validation] ✅ "${fieldName}": Converted ${description.substring(0, 50)}... → "${cleanedValue}"`);
+      cleanedData[fieldName] = cleanedValue;
+      
+    } catch (error) {
+      console.error(`[Validation] ❌ Failed to convert "${fieldName}":`, error);
+      // Keep original on error
+    }
+  }
+  
+  console.log(`[Validation] ✅ Validation complete. Cleaned ${fieldsToFix.length} field(s).`);
+  return cleanedData;
 }
 
 /**
@@ -1045,6 +1447,7 @@ ${initialResults}
 REVALIDATION RULES:
 
 1. **Verify EVERY Field Systematically**:
+   - Check if the field has extracted actual value or description. If it has extracted a description, fetch the actual coverage value
    - Re-search the ENTIRE markdown for EACH field individually
    - For each field, check ALL tables in the document - don't skip any
    - Verify the current value is correct by finding it again in the source
@@ -1134,7 +1537,10 @@ OUTPUT FORMAT:
   console.log('Revalidation response received');
 
   // Parse the revalidated data
-  const revalidatedData = parseMarkdownTable(content);
+  let revalidatedData = parseMarkdownTable(content);
+  
+  // Apply ALKOOT rule to ensure co-insurance and deductible match
+  revalidatedData = applyAlkootSpecificRules(revalidatedData);
   
   // Log changes
   console.log(`\n=== REVALIDATION RESULTS (Pass ${passNumber}) ===`);
@@ -1160,206 +1566,103 @@ OUTPUT FORMAT:
 }
 
 /**
- * Extract text from PDF using pdfjs-dist (browser-compatible)
- */
-async function extractTextFromPDF(file: File): Promise<string> {
-  console.log('[PDF Parser] Starting text extraction...');
-  
-  const arrayBuffer = await file.arrayBuffer();
-  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-  
-  console.log(`[PDF Parser] Total pages: ${pdf.numPages}`);
-  
-  let fullText = '';
-  
-  // Extract text from each page
-  for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-    const page = await pdf.getPage(pageNum);
-    const textContent = await page.getTextContent();
-    
-    // Combine all text items
-    const pageText = textContent.items
-      .map((item: any) => item.str)
-      .join(' ');
-    
-    fullText += `\n\n=== PAGE ${pageNum} ===\n\n${pageText}`;
-  }
-  
-  console.log(`[PDF Parser] Extracted ${fullText.length} characters`);
-  return fullText;
-}
-
-/**
- * Extract fields directly from PDF text using OpenAI (SIMPLIFIED APPROACH)
- */
-async function extractFieldsDirectly(
-  pdfText: string,
-  fieldsToExtract: string[],
-  apiKey: string,
-  payerPlan?: PayerPlan,
-  payerPlanName?: string
-): Promise<Record<string, any>> {
-  console.log('[OpenAI] Extracting fields directly from PDF text...');
-  
-  const prompt = `You are an expert at extracting data from insurance policy documents.
-
-DOCUMENT CONTEXT:
-- Payer Plan: ${payerPlanName || payerPlan || 'Insurance Policy'}
-- This is an insurance benefits document that contains policy details and coverage information.
-
-FIELDS TO EXTRACT:
-${fieldsToExtract.map((field, idx) => `${idx + 1}. ${field}`).join('\n')}
-
-EXTRACTION RULES:
-1. Extract ONLY the actual values, NOT descriptions or explanations
-2. For percentages, return just the number with % (e.g., "20%")
-3. For currency amounts, include currency and amount (e.g., "QAR 7,500", "QAR 100")
-4. For coverage limits, use exact wording (e.g., "Unlimited", "Not covered", "QAR 50,000")
-5. For multiple values (like co-insurance per hospital), list them clearly separated by commas
-6. For dates, use format: DD/MM/YYYY
-7. For "Not Found" or missing fields, return null
-8. Be precise - extract exactly what's in the document, no interpretation
-
-IMPORTANT:
-- Look for values in tables, headers, and body text
-- Check both page 1 (header/policy info) and subsequent pages (benefits tables)
-- For fields like Policy Number, Category, Effective Date - check the header section
-- For benefits like co-insurance, deductibles, coverage - check benefits tables
-
-if any field is null or not found, then send it as "Nil" in the output.
-  
-DOCUMENT TEXT:
-${pdfText}
-
-OUTPUT:
-Return a JSON object where each key is a field name and the value is the extracted data (or null if not found).
-Example:
-{
-  "Policy Number": "123456",
-  "Category": "Premium",
-  "Co-insurance": "20%",
-  "Dental Benefit": "QAR 7,500, 20% co-insurance"
-}
-
-Extract the fields now:`;
-console.log('prompt', prompt)
-console.log('EXTRACTION_CONFIG.PRIMARY_MODEL', EXTRACTION_CONFIG.PRIMARY_MODEL)
-  const response = await fetch(OPENAI_CHAT_ENDPOINT, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: EXTRACTION_CONFIG.PRIMARY_MODEL,
-      messages: [
-        {
-          role: 'user',
-          content: prompt
-        }
-      ],
-      response_format: { type: "json_object" }
-    }),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`OpenAI API error: ${response.status} - ${errorText}`);
-  }
-
-  const data = await response.json();
-  const content = data.choices[0].message.content;
-  
-  console.log('[OpenAI] Extraction response received');
-  console.log('[OpenAI] Raw response:', content);
-  
-  return JSON.parse(content);
-}
-
-/**
- * Converts a PDF to Markdown format with specific rules (DEPRECATED)
- * Now using extractTextFromPDF instead for simplicity
+ * IMPROVED: Two-step PDF to Markdown conversion
+ * Step 1: Extract raw text using pdf-parse (reliable, preserves tables)
+ * Step 2: Use LLM only for markdown formatting (lighter task)
+ * 
+ * Benefits:
+ * - pdf-parse is excellent at preserving table structure and layout
+ * - Reduces LLM workload - only needs to format, not extract
+ * - More reliable text extraction, especially for tables
+ * - Faster and cheaper
  */
 async function convertPDFToMarkdown(file: File, apiKey: string): Promise<string> {
-  console.log('Converting PDF to Markdown...');
+  console.log('[PDF Conversion] Step 1: Extracting text with pdf-parse...');
   
-  // Upload the PDF file to OpenAI
-  const fileId = await uploadFileToOpenAI(file, apiKey);
+  // Step 1: Extract raw text from PDF using pdf-parse
+  const arrayBuffer = await file.arrayBuffer();
+  const buffer = Buffer.from(arrayBuffer);
   
-  const prompt = `You are an expert PDF to Markdown converter. Your task is to convert this PDF document to clean, well-formatted Markdown.
+  let pdfData;
+  try {
+    pdfData = await pdfParse(buffer, {
+      // pdf-parse options for better table extraction
+      max: 0, // Parse all pages
+    });
+  } catch (error) {
+    console.error('[PDF Conversion] pdf-parse failed:', error);
+    throw new Error(`Failed to parse PDF: ${(error as Error).message}`);
+  }
+  
+  const rawText = pdfData.text;
+  const numPages = pdfData.numpages;
+  
+  console.log(`[PDF Conversion] Extracted ${rawText.length} characters from ${numPages} pages`);
+  console.log(`[PDF Conversion] First 500 chars:`, rawText.substring(0, 500));
+  
+  // If text is very short, something went wrong
+  if (rawText.length < 100) {
+    console.warn('[PDF Conversion] Warning: Very short text extracted, PDF might be image-based');
+  }
+  
+  // Step 2: Use LLM only to format the extracted text into clean markdown
+  console.log('[PDF Conversion] Step 2: Formatting text to markdown with LLM...');
+  
+  const prompt = `You are an expert text formatter. You will receive RAW TEXT extracted from an insurance PDF document. 
+Your task is to format this text into clean, well-structured Markdown.
 
-CRITICAL RULES YOU MUST FOLLOW:
+The text has already been extracted from the PDF, so your ONLY job is to:
+1. Identify and properly format tables using markdown table syntax (| column | column |)
+2. Add appropriate headers (#, ##, ###) for sections
+3. Format lists with bullet points or numbers
+4. Remove duplicate headers/footers that appear across pages
+5. Clean up spacing and line breaks
+6. Preserve ALL content - do not skip or summarize anything
 
-1. **COMPLETE CONTENT EXTRACTION (HIGHEST PRIORITY)**:
-   - Extract EVERY SINGLE CHARACTER from the document
-   - DO NOT skip, miss, or omit ANY content whatsoever
-   - Extract ALL text from EVERY page - nothing should be left behind
-   - Include ALL data from tables, paragraphs, sections, and subsections
-   - If you see text in the PDF, it MUST appear in the markdown output
-   - Missing even a single field or value is UNACCEPTABLE
-   - Extract 100% of the document content with ZERO exceptions
+CRITICAL FOR TABLES:
+- Look for rows of data with consistent spacing/alignment - these are table rows
+- The raw text will have table data, but it needs proper markdown table formatting
+- Use | separators to create proper markdown tables
+- Preserve EVERY row and cell from the original text
+- Common patterns to look for:
+  * Benefit names followed by values/limits
+  * Provider names with co-insurance percentages
+  * Field labels with corresponding values
+- If you see repeated patterns of "Label: Value" or aligned columns, convert to table
 
-2. **TABLE PRESERVATION (CRITICAL - TABLES CONTAIN MOST IMPORTANT DATA)**: 
-   - Tables are the PRIMARY source of field values - extract them with 100% accuracy
-   - Preserve ALL tables EXACTLY as they appear in the PDF
-   - Extract EVERY SINGLE ROW - do not skip any rows
-   - Extract EVERY SINGLE COLUMN - do not skip any columns
-   - Extract EVERY CELL VALUE completely - including all text, numbers, percentages, amounts
-   - Use proper Markdown table syntax with | separators
-   - Maintain exact row and column structure
-   - Keep all table headers, labels, and values intact
-   - If a table has 50 rows, the markdown must have 50 rows
-   - Special tables (e.g., "Provider Specific Co-insurance") are CRITICAL - extract completely
-   - Multi-column tables: preserve all columns with proper alignment
-   - Merged cells: extract the content and indicate the span
-   - Tables within sections: extract ALL of them, not just the main table
-   - VERIFY: After extracting a table, count the rows - did you extract them all?
+RULES:
+- Keep header from first page only (usually at the top with company/plan name)
+- Remove headers that repeat on subsequent pages
+- Remove page numbers and footers
+- Preserve 100% of the actual content
+- Return ONLY the markdown, no explanations
 
-3. **Header Handling**:
-   - Keep the header ONLY from the FIRST page
-   - REMOVE headers from ALL subsequent pages
-   - Headers typically include company logos, document titles at the top
+Here is the raw extracted text:
 
-4. **Footer Handling**:
-   - REMOVE ALL footers from EVERY page
-   - Footers typically include page numbers, company info, disclaimers at the bottom
+---
+${rawText}
+---
 
-5. **Content Preservation**:
-   - Preserve ALL body content from EVERY page
-   - Extract ALL paragraphs, sections, and subsections completely
-   - Maintain paragraph structure
-   - Keep bullet points and numbered lists - extract ALL items
-   - Preserve bold and italic formatting where visible
-   - Include all field names, values, labels, and descriptions
-   - Extract all benefit details, coverage amounts, percentages, and conditions
+Convert this to clean, well-formatted Markdown following the rules above.`;
 
-6. **Output Format**:
-   - Return ONLY the Markdown content
-   - No explanations or comments
-   - Clean, readable Markdown format
-
-REMEMBER: Your #1 priority is COMPLETENESS. Every character in the PDF must be in the markdown output. Missing content will cause critical data extraction failures. Extract EVERYTHING.
-
-Analyze the document carefully and convert it to Markdown following these rules exactly.`;
-
-  // Use Assistants API with file_search to process the PDF
-  const response = await createAssistantAndRun({ 
-    apiKey, 
-    fileId, 
-    prompt,
-    model: "gpt-4o"
+  // Use GPT-5 Responses API to format the text
+  const result = await callGPT5Responses({
+    apiKey,
+    userPrompt: prompt,
+    responseFormat: 'text'
   });
 
-  // Extract markdown content from response
-  let markdown = '';
-  if (response.data?.[0]?.content?.[0]?.text?.value) {
-    markdown = response.data[0].content[0].text.value;
-  } else {
-    throw new Error('No markdown content returned from PDF conversion');
+  const markdown = result.content;
+  
+  if (!markdown || markdown.length < 100) {
+    console.error('[PDF Conversion] LLM returned very short markdown');
+    console.error('[PDF Conversion] Raw text length:', rawText.length);
+    console.error('[PDF Conversion] Markdown length:', markdown.length);
+    throw new Error('LLM failed to format text to markdown properly');
   }
 
-  console.log('PDF to Markdown conversion completed');
-  console.log('Markdown length:', markdown.length);
+  console.log('[PDF Conversion] Conversion completed');
+  console.log(`[PDF Conversion] Input: ${rawText.length} chars → Output: ${markdown.length} chars`);
   
   return markdown;
 }
@@ -1616,12 +1919,50 @@ function postProcessData(data: Record<string, any>): Record<string, any> {
 }
 
 /**
+ * Clean and normalize extracted value
+ * - Remove trailing periods
+ * - Normalize capitalization (Not Covered, Covered, Nil)
+ */
+function cleanExtractedValue(value: string | null): string | null {
+  if (!value || value === 'null') return null;
+  
+  let cleaned = value.trim();
+  
+  // Remove trailing period (unless it's part of "Prior-approval required.")
+  if (cleaned.endsWith('.') && !cleaned.toLowerCase().includes('required')) {
+    cleaned = cleaned.slice(0, -1).trim();
+  }
+  
+  // Normalize common values
+  const lowerValue = cleaned.toLowerCase();
+  
+  // Normalize "Not Covered"
+  if (lowerValue === 'not covered') {
+    return 'Not Covered';
+  }
+  
+  // Normalize "Covered" (but not if it has more text after it)
+  if (lowerValue === 'covered') {
+    return 'Covered';
+  }
+  
+  // Normalize "Nil"
+  if (lowerValue === 'nil') {
+    return 'Nil';
+  }
+  
+  return cleaned;
+}
+
+/**
  * Parses a markdown table into a JSON object
  * Expects format:
  * | Field Name | Value |
  * |------------|-------|
  * | Field 1    | Value 1 |
  * | Field 2    | Value 2 |
+ * 
+ * IMPROVED: Handles code fences, better header detection, cleans values
  */
 function parseMarkdownTable(markdown: string): Record<string, any> {
   const result: Record<string, any> = {};
@@ -1632,16 +1973,48 @@ function parseMarkdownTable(markdown: string): Record<string, any> {
     throw new Error(`Invalid markdown input: expected string, received ${typeof markdown}`);
   }
   
-  // Split into lines and remove header and separator rows
-  const lines = markdown
+  // Strip code fence markers if present
+  let cleanedMarkdown = markdown.trim();
+  if (cleanedMarkdown.startsWith('```markdown')) {
+    cleanedMarkdown = cleanedMarkdown.replace(/^```markdown\s*\n?/, '');
+  }
+  if (cleanedMarkdown.startsWith('```')) {
+    cleanedMarkdown = cleanedMarkdown.replace(/^```\s*\n?/, '');
+  }
+  if (cleanedMarkdown.endsWith('```')) {
+    cleanedMarkdown = cleanedMarkdown.replace(/\s*```$/, '');
+  }
+  
+  // Split into lines
+  const lines = cleanedMarkdown
     .split('\n')
-    .filter(line => line.trim().startsWith('|') && !line.includes('---'));
+    .map(line => line.trim())
+    .filter(line => line.startsWith('|'));
+  
+  if (lines.length === 0) {
+    console.warn('[parseMarkdownTable] No table rows found');
+    return result;
+  }
+  
+  // Skip header row(s) - look for "Field Name" and "Value" or separator rows
+  let startIndex = 0;
+  for (let i = 0; i < Math.min(3, lines.length); i++) {
+    const line = lines[i];
+    if (line.includes('---') || 
+        (line.toLowerCase().includes('field') && line.toLowerCase().includes('value'))) {
+      startIndex = i + 1;
+    }
+  }
 
-  // Process each line
-  for (const line of lines) {
+  // Process data rows
+  for (let i = startIndex; i < lines.length; i++) {
+    const line = lines[i];
+    
+    // Skip separator rows
+    if (line.includes('---')) continue;
+    
     // Remove leading/trailing | and split by |
     const cells = line
-      .trim()
       .slice(1, -1) // Remove leading and trailing |
       .split('|')
       .map(cell => cell.trim());
@@ -1651,13 +2024,15 @@ function parseMarkdownTable(markdown: string): Record<string, any> {
       const value = cells[1];
       
       // Only add if we have both field and value
-      if (field && value) {
-        // Convert 'null' or empty values to null
-        result[field] = value.toLowerCase() === 'null' || value === '' ? null : value;
+      if (field && value && !field.toLowerCase().includes('field') && !value.toLowerCase().includes('value')) {
+        // Convert 'null' or empty values to null, otherwise clean the value
+        const processedValue = value.toLowerCase() === 'null' || value === '' ? null : cleanExtractedValue(value);
+        result[field] = processedValue;
       }
     }
   }
 
+  console.log(`[parseMarkdownTable] Extracted ${Object.keys(result).length} fields`);
   return result;
 }
 
@@ -1828,7 +2203,7 @@ export async function extractDataApi({
   let success = false;
   let errorMessage = '';
   let extractedFields = 0;
-console.log('fields', fields)
+
   try {
     // Log extraction started
     await logExtraction(file.name, 'started', `Starting extraction for ${payerPlanName || payerPlan || 'unknown'}`);
@@ -1842,18 +2217,18 @@ console.log('fields', fields)
       payer_plan: payerPlanName || 'unknown',
     });
 
-    // STEP 1: Extract text from PDF using pdfjs-dist
-    console.log('Step 1: Extracting text from PDF...');
-    const pdfText = await extractTextFromPDF(file);
-    console.log('PDF text extraction complete. Length:', pdfText.length);
-    console.log('\n========== FULL PDF TEXT START ==========\n');
-    console.log(pdfText);
-    console.log('\n========== FULL PDF TEXT END ==========\n');
+    // STEP 1: Convert PDF to Markdown first
+    console.log('Step 1: Converting PDF to Markdown...');
+    const markdown = await convertPDFToMarkdown(file, apiKey);
+    console.log('Markdown conversion complete. Length:', markdown.length);
+    console.log('\n========== FULL MARKDOWN OUTPUT START ==========\n');
+    console.log(markdown);
+    console.log('\n========== FULL MARKDOWN OUTPUT END ==========\n');
 
-    // Track successful text extraction
-    trackExtractionEvent('text_extraction_completed', {
+    // Track successful markdown conversion
+    trackExtractionEvent('markdown_conversion_completed', {
       file_name: file.name,
-      text_length: pdfText.length,
+      markdown_length: markdown.length,
       payer_plan: payerPlanName || 'unknown',
     });
 
@@ -1864,10 +2239,160 @@ console.log('fields', fields)
     if (!resolvedFields || resolvedFields.length === 0) {
       throw new Error("No fields provided to extract.");
     }
-console.log('resolvedFields',resolvedFields)
-    // STEP 3: Extract fields directly from PDF text using OpenAI
-    console.log('Step 2: Extracting fields from PDF text using OpenAI...');
-    const json = await extractFieldsDirectly(pdfText, resolvedFields, apiKey, payerPlan, payerPlanName);
+
+    // CLEVER METHOD: Extract document structure first (if enabled)
+    let documentStructure = { sections: [], tableLocations: [], fieldHints: {} };
+    if (EXTRACTION_CONFIG.EXTRACT_DOCUMENT_STRUCTURE) {
+      console.log('Step 2a: Extracting document structure...');
+      documentStructure = await extractDocumentStructure(markdown, apiKey);
+    }
+    
+    // CLEVER METHOD: Extract and parse all tables first (if enabled)
+    let structuredTables: any[] = [];
+    if (EXTRACTION_CONFIG.USE_TABLE_FIRST_EXTRACTION) {
+      console.log('Step 2b: Extracting all tables into structured format...');
+      structuredTables = extractAllTables(markdown);
+      
+      // Try to find fields directly in structured tables (fast path)
+      console.log('Step 2c: Searching for fields in structured tables...');
+      const tableResults: Record<string, any> = {};
+      
+      const fieldHints = payerPlan && FIELD_SUGGESTIONS[payerPlan] 
+        ? FIELD_SUGGESTIONS[payerPlan] 
+        : {};
+      
+      for (const fieldName of resolvedFields) {
+        const hints = fieldHints[fieldName] || [];
+        const result = searchFieldInTables(fieldName, hints, structuredTables);
+        
+        if (result && result.confidence >= 0.85) {
+          tableResults[fieldName] = result.value;
+          console.log(`✓ [Table-First] Found "${fieldName}": ${result.value} (${result.source})`);
+        }
+      }
+      
+      console.log(`[Table-First] Found ${Object.keys(tableResults).length}/${resolvedFields.length} fields directly from tables`);
+      
+      // Use table results as initial extraction
+      if (Object.keys(tableResults).length > 0) {
+        console.log('Using table-first results as baseline...');
+      }
+    }
+    
+    // STEP 3: Extract fields from the markdown (First pass)
+    console.log('Step 2: Extracting fields from Markdown (First pass)...');
+    const initialJson = await extractFieldsFromMarkdown(markdown, resolvedFields, apiKey, payerPlan);
+    
+    // Merge table-first results (if any) - table-first results have priority if confidence is high
+    if (structuredTables.length > 0) {
+      const fieldHints = payerPlan && FIELD_SUGGESTIONS[payerPlan] ? FIELD_SUGGESTIONS[payerPlan] : {};
+      
+      for (const fieldName of resolvedFields) {
+        if (!initialJson[fieldName]) {
+          const hints = fieldHints[fieldName] || [];
+          const result = searchFieldInTables(fieldName, hints, structuredTables);
+          
+          if (result && result.confidence >= 0.85) {
+            initialJson[fieldName] = result.value;
+            console.log(`✓ [Table Merge] Added "${fieldName}" from table: ${result.value}`);
+          }
+        }
+      }
+    }
+    
+    console.log('Initial field extraction complete');
+    
+    // STEP 4: Revalidate ONLY missing fields (don't touch fields that are already extracted correctly)
+    const missingFieldsAfterInitial = resolvedFields.filter(f => 
+      initialJson[f] === null || 
+      initialJson[f] === undefined || 
+      initialJson[f] === 'null'
+    );
+    
+    let json = initialJson;
+    
+    if (missingFieldsAfterInitial.length > 0) {
+      console.log(`Step 3: Revalidating ${missingFieldsAfterInitial.length} missing fields (Second pass)...`);
+      console.log(`Missing fields: ${missingFieldsAfterInitial.join(', ')}`);
+      
+      const secondPassJson = await revalidateExtractedFields(
+        markdown, 
+        initialJson, 
+        missingFieldsAfterInitial, // Only revalidate missing fields
+        apiKey, 
+        1
+      );
+      
+      // Merge: Keep good values from initial, only update missing ones
+      json = { ...initialJson };
+      for (const field of missingFieldsAfterInitial) {
+        if (secondPassJson[field] !== null && secondPassJson[field] !== undefined) {
+          json[field] = secondPassJson[field];
+        }
+      }
+      
+      console.log('Second pass validation complete');
+      
+      // Check if there are still missing fields after second pass
+      const stillMissing = resolvedFields.filter(f => 
+        json[f] === null || 
+        json[f] === undefined || 
+        json[f] === 'null'
+      );
+      
+      if (stillMissing.length > 0) {
+        console.log(`Step 4: Final revalidation for ${stillMissing.length} still-missing fields (Third pass)...`);
+        console.log(`Still missing: ${stillMissing.join(', ')}`);
+        
+        const thirdPassJson = await revalidateExtractedFields(
+          markdown, 
+          json, 
+          stillMissing, // Only revalidate still-missing fields
+          apiKey, 
+          2
+        );
+        
+        // Merge again: Keep existing good values, only update still-missing ones
+        for (const field of stillMissing) {
+          if (thirdPassJson[field] !== null && thirdPassJson[field] !== undefined) {
+            json[field] = thirdPassJson[field];
+          }
+        }
+        
+        console.log('Final validation complete - all fields cross-checked');
+      } else {
+        console.log('Step 4: No missing fields after second pass - skipping third pass');
+      }
+    } else {
+      console.log('Step 3: All fields extracted successfully - skipping revalidation passes');
+    }
+    
+    // STEP 6: Data Science Approach - Field-by-field extraction for missing critical fields
+    const missingFields = resolvedFields.filter(f => json[f] === null || json[f] === undefined);
+    
+    if (missingFields.length > 0 && EXTRACTION_CONFIG.FIELD_BY_FIELD_MODE) {
+      console.log(`\n=== STEP 5: Field-by-Field Extraction for ${missingFields.length} missing fields ===`);
+      
+      const fieldHints = payerPlan && FIELD_SUGGESTIONS[payerPlan] 
+        ? FIELD_SUGGESTIONS[payerPlan] 
+        : {};
+      
+      for (const fieldName of missingFields) {
+        console.log(`\nExtracting individually: ${fieldName}`);
+        const hints = fieldHints[fieldName] || [];
+        const result = await extractSingleField(markdown, fieldName, hints, apiKey);
+        
+        if (result.value !== null && result.confidence >= EXTRACTION_CONFIG.CONFIDENCE_THRESHOLD) {
+          json[fieldName] = result.value;
+          console.log(`✓ Found via single field extraction: ${fieldName} = ${result.value}`);
+        } else {
+          console.log(`✗ Still not found: ${fieldName} (confidence: ${result.confidence})`);
+        }
+      }
+    } else if (missingFields.length > 0) {
+      console.log(`\n⚠️  ${missingFields.length} fields still missing. Enable FIELD_BY_FIELD_MODE for individual extraction.`);
+      console.log(`Missing fields: ${missingFields.join(', ')}`);
+    }
     // Log what was found for debugging
     console.log(`\n=== EXTRACTION DEBUG INFO ===`);
     console.log(`Payer Plan: ${payerPlan}`);

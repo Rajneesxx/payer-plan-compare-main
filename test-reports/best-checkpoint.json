@@ -1,0 +1,84 @@
+{
+  "timestamp": "2025-11-11T13:34:39.499Z",
+  "accuracy": 92.3076923076923,
+  "results": [
+    {
+      "field": "Policy Number",
+      "expected": "AK/HC/00064/7/1",
+      "actual": "AK/HC/00064/7/1",
+      "match": true
+    },
+    {
+      "field": "Category",
+      "expected": "AL SAFELEYAH REAL ESTATE INVESTMENT",
+      "actual": "AL SAFELEYAH REAL ESTATE INVESTMENT",
+      "match": true
+    },
+    {
+      "field": "Effective Date",
+      "expected": "01 November 2025",
+      "actual": "01 November 2025",
+      "match": true
+    },
+    {
+      "field": "Expiry Date",
+      "expected": "31 October 2026",
+      "actual": "31 October 2026",
+      "match": true
+    },
+    {
+      "field": "Al Ahli Hospital",
+      "expected": "Nil",
+      "actual": "Nil",
+      "match": true
+    },
+    {
+      "field": "Co-insurance on all inpatient treatment",
+      "expected": "Nil",
+      "actual": "Nil",
+      "match": true
+    },
+    {
+      "field": "Deductible on consultation",
+      "expected": "Nil",
+      "actual": "Nil",
+      "match": true
+    },
+    {
+      "field": "Co-insurance",
+      "expected": "Nil",
+      "actual": "Nil",
+      "match": true
+    },
+    {
+      "field": "Vaccinations & immunizations",
+      "expected": "Covered",
+      "actual": "Covered",
+      "match": true
+    },
+    {
+      "field": "Psychiatric treatment and Psychotherapy",
+      "expected": "QAR 3,500. Prior-approval required.",
+      "actual": "QAR 3,500",
+      "match": false
+    },
+    {
+      "field": "Pregnancy and childbirth",
+      "expected": "Not Covered",
+      "actual": "Not Covered",
+      "match": true
+    },
+    {
+      "field": "Dental Benefit",
+      "expected": "QAR 7,500, 20% co-insurance, nil deductible",
+      "actual": "QAR 7,500, 20% co-insurance, nil deductible",
+      "match": true
+    },
+    {
+      "field": "Optical Benefit",
+      "expected": "Not Covered",
+      "actual": "Not Covered",
+      "match": true
+    }
+  ]
+}

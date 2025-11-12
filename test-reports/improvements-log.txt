@@ -1,0 +1,17 @@
+
+=== Iteration 1 ===
+2025-11-11T11:48:17.066Z
+Add more field variations for "Deductible on consultation" in field hints
+Improve search instructions for "Deductible on consultation" in prompt
+Add more field variations for "Co-insurance" in field hints
+Improve search instructions for "Co-insurance" in prompt
+Add more field variations for "Vaccinations & immunizations" in field hints
+Improve search instructions for "Vaccinations & immunizations" in prompt
+Add more field variations for "Psychiatric treatment and Psychotherapy" in field hints
+Improve search instructions for "Psychiatric treatment and Psychotherapy" in prompt
+Add more field variations for "Dental Benefit" in field hints
+Improve search instructions for "Dental Benefit" in prompt
+Add more field variations for "Optical Benefit" in field hints
+Improve search instructions for "Optical Benefit" in prompt
+For "Al Ahli Hospital": Review extraction logic - expected "Nil" but got "Not applicable"
+Emphasize OUTPATIENT priority in prompt for co-insurance and deductible fields

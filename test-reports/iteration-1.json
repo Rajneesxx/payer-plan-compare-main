@@ -1,0 +1,19 @@
+{
+  "iteration": 1,
+  "timestamp": "2025-11-11T13:34:39.505Z",
+  "accuracy": 92.3,
+  "fieldsTotal": 13,
+  "fieldsCorrect": 12,
+  "fieldsFailed": 1,
+  "failures": [
+    {
+      "field": "Psychiatric treatment and Psychotherapy",
+      "expected": "QAR 3,500. Prior-approval required.",
+      "actual": "QAR 3,500",
+      "match": false,
+      "reason": "Partial match - formatting difference"
+    }
+  ],
+  "improvementsApplied": [],
+  "timeMs": 633144
+}

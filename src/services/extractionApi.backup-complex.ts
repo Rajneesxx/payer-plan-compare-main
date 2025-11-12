@@ -43,16 +43,11 @@
  *    - Model fallback strategy
  */
 
-//  OpenAI extraction service - SIMPLIFIED VERSION
-// Using pdfjs-dist for text extraction + direct OpenAI API calls
+//  OpenAI extraction service using Responses API with attachments + file_search
+// Minimal public surface retained: extractDataApi and compareDataApi
 import { FIELD_MAPPINGS, PAYER_PLANS, type PayerPlan, type ExtractedData, type ComparisonResult } from "@/constants/fields";
 import { FIELD_SUGGESTIONS } from "@/constants/fields";
 import { logExtraction } from "@/utils/logging";
-// @ts-ignore - pdfjs-dist has type issues with ESM
-import * as pdfjsLib from 'pdfjs-dist';
-
-// Set worker path for pdfjs
-pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
 
 declare global {
   interface Window {
@@ -82,7 +77,7 @@ const OPENAI_CHAT_ENDPOINT = `${OPENAI_BASE}/chat/completions`;
 // Model configuration - data science approach: use best model for reasoning
 const EXTRACTION_CONFIG = {
   // gpt-5 has better reasoning for complex document analysis
-  PRIMARY_MODEL: "gpt-5-mini",          // Best for complex reasoning and field extraction
+  PRIMARY_MODEL: "gpt-5",          // Best for complex reasoning and field extraction
   FALLBACK_MODEL: "gpt-5",         // Fallback model
   MARKDOWN_MODEL: "gpt-5",         // Good for PDF to markdown conversion
   USE_STRUCTURED_OUTPUT: true,     // Force JSON schema for consistency
@@ -1160,125 +1155,11 @@ OUTPUT FORMAT:
 }
 
 /**
- * Extract text from PDF using pdfjs-dist (browser-compatible)
- */
-async function extractTextFromPDF(file: File): Promise<string> {
-  console.log('[PDF Parser] Starting text extraction...');
-  
-  const arrayBuffer = await file.arrayBuffer();
-  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-  
-  console.log(`[PDF Parser] Total pages: ${pdf.numPages}`);
-  
-  let fullText = '';
-  
-  // Extract text from each page
-  for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-    const page = await pdf.getPage(pageNum);
-    const textContent = await page.getTextContent();
-    
-    // Combine all text items
-    const pageText = textContent.items
-      .map((item: any) => item.str)
-      .join(' ');
-    
-    fullText += `\n\n=== PAGE ${pageNum} ===\n\n${pageText}`;
-  }
-  
-  console.log(`[PDF Parser] Extracted ${fullText.length} characters`);
-  return fullText;
-}
-
-/**
- * Extract fields directly from PDF text using OpenAI (SIMPLIFIED APPROACH)
- */
-async function extractFieldsDirectly(
-  pdfText: string,
-  fieldsToExtract: string[],
-  apiKey: string,
-  payerPlan?: PayerPlan,
-  payerPlanName?: string
-): Promise<Record<string, any>> {
-  console.log('[OpenAI] Extracting fields directly from PDF text...');
-  
-  const prompt = `You are an expert at extracting data from insurance policy documents.
-
-DOCUMENT CONTEXT:
-- Payer Plan: ${payerPlanName || payerPlan || 'Insurance Policy'}
-- This is an insurance benefits document that contains policy details and coverage information.
-
-FIELDS TO EXTRACT:
-${fieldsToExtract.map((field, idx) => `${idx + 1}. ${field}`).join('\n')}
-
-EXTRACTION RULES:
-1. Extract ONLY the actual values, NOT descriptions or explanations
-2. For percentages, return just the number with % (e.g., "20%")
-3. For currency amounts, include currency and amount (e.g., "QAR 7,500", "QAR 100")
-4. For coverage limits, use exact wording (e.g., "Unlimited", "Not covered", "QAR 50,000")
-5. For multiple values (like co-insurance per hospital), list them clearly separated by commas
-6. For dates, use format: DD/MM/YYYY
-7. For "Not Found" or missing fields, return null
-8. Be precise - extract exactly what's in the document, no interpretation
-
-IMPORTANT:
-- Look for values in tables, headers, and body text
-- Check both page 1 (header/policy info) and subsequent pages (benefits tables)
-- For fields like Policy Number, Category, Effective Date - check the header section
-- For benefits like co-insurance, deductibles, coverage - check benefits tables
-
-if any field is null or not found, then send it as "Nil" in the output.
-  
-DOCUMENT TEXT:
-${pdfText}
-
-OUTPUT:
-Return a JSON object where each key is a field name and the value is the extracted data (or null if not found).
-Example:
-{
-  "Policy Number": "123456",
-  "Category": "Premium",
-  "Co-insurance": "20%",
-  "Dental Benefit": "QAR 7,500, 20% co-insurance"
-}
-
-Extract the fields now:`;
-console.log('prompt', prompt)
-console.log('EXTRACTION_CONFIG.PRIMARY_MODEL', EXTRACTION_CONFIG.PRIMARY_MODEL)
-  const response = await fetch(OPENAI_CHAT_ENDPOINT, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: EXTRACTION_CONFIG.PRIMARY_MODEL,
-      messages: [
-        {
-          role: 'user',
-          content: prompt
-        }
-      ],
-      response_format: { type: "json_object" }
-    }),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`OpenAI API error: ${response.status} - ${errorText}`);
-  }
-
-  const data = await response.json();
-  const content = data.choices[0].message.content;
-  
-  console.log('[OpenAI] Extraction response received');
-  console.log('[OpenAI] Raw response:', content);
-  
-  return JSON.parse(content);
-}
-
-/**
- * Converts a PDF to Markdown format with specific rules (DEPRECATED)
- * Now using extractTextFromPDF instead for simplicity
+ * Converts a PDF to Markdown format with specific rules:
+ * - Preserves all tables as given in the PDF
+ * - Removes all footers on all pages
+ * - Preserves header only on the first page
+ * - Removes headers on subsequent pages
  */
 async function convertPDFToMarkdown(file: File, apiKey: string): Promise<string> {
   console.log('Converting PDF to Markdown...');
@@ -1828,7 +1709,7 @@ export async function extractDataApi({
   let success = false;
   let errorMessage = '';
   let extractedFields = 0;
-console.log('fields', fields)
+
   try {
     // Log extraction started
     await logExtraction(file.name, 'started', `Starting extraction for ${payerPlanName || payerPlan || 'unknown'}`);
@@ -1842,18 +1723,18 @@ console.log('fields', fields)
       payer_plan: payerPlanName || 'unknown',
     });
 
-    // STEP 1: Extract text from PDF using pdfjs-dist
-    console.log('Step 1: Extracting text from PDF...');
-    const pdfText = await extractTextFromPDF(file);
-    console.log('PDF text extraction complete. Length:', pdfText.length);
-    console.log('\n========== FULL PDF TEXT START ==========\n');
-    console.log(pdfText);
-    console.log('\n========== FULL PDF TEXT END ==========\n');
+    // STEP 1: Convert PDF to Markdown first
+    console.log('Step 1: Converting PDF to Markdown...');
+    const markdown = await convertPDFToMarkdown(file, apiKey);
+    console.log('Markdown conversion complete. Length:', markdown.length);
+    console.log('\n========== FULL MARKDOWN OUTPUT START ==========\n');
+    console.log(markdown);
+    console.log('\n========== FULL MARKDOWN OUTPUT END ==========\n');
 
-    // Track successful text extraction
-    trackExtractionEvent('text_extraction_completed', {
+    // Track successful markdown conversion
+    trackExtractionEvent('markdown_conversion_completed', {
       file_name: file.name,
-      text_length: pdfText.length,
+      markdown_length: markdown.length,
       payer_plan: payerPlanName || 'unknown',
     });
 
@@ -1864,10 +1745,107 @@ console.log('fields', fields)
     if (!resolvedFields || resolvedFields.length === 0) {
       throw new Error("No fields provided to extract.");
     }
-console.log('resolvedFields',resolvedFields)
-    // STEP 3: Extract fields directly from PDF text using OpenAI
-    console.log('Step 2: Extracting fields from PDF text using OpenAI...');
-    const json = await extractFieldsDirectly(pdfText, resolvedFields, apiKey, payerPlan, payerPlanName);
+
+    // CLEVER METHOD: Extract document structure first (if enabled)
+    let documentStructure = { sections: [], tableLocations: [], fieldHints: {} };
+    if (EXTRACTION_CONFIG.EXTRACT_DOCUMENT_STRUCTURE) {
+      console.log('Step 2a: Extracting document structure...');
+      documentStructure = await extractDocumentStructure(markdown, apiKey);
+    }
+    
+    // CLEVER METHOD: Extract and parse all tables first (if enabled)
+    let structuredTables: any[] = [];
+    if (EXTRACTION_CONFIG.USE_TABLE_FIRST_EXTRACTION) {
+      console.log('Step 2b: Extracting all tables into structured format...');
+      structuredTables = extractAllTables(markdown);
+      
+      // Try to find fields directly in structured tables (fast path)
+      console.log('Step 2c: Searching for fields in structured tables...');
+      const tableResults: Record<string, any> = {};
+      
+      const fieldHints = payerPlan && FIELD_SUGGESTIONS[payerPlan] 
+        ? FIELD_SUGGESTIONS[payerPlan] 
+        : {};
+      
+      for (const fieldName of resolvedFields) {
+        const hints = fieldHints[fieldName] || [];
+        const result = searchFieldInTables(fieldName, hints, structuredTables);
+        
+        if (result && result.confidence >= 0.85) {
+          tableResults[fieldName] = result.value;
+          console.log(`✓ [Table-First] Found "${fieldName}": ${result.value} (${result.source})`);
+        }
+      }
+      
+      console.log(`[Table-First] Found ${Object.keys(tableResults).length}/${resolvedFields.length} fields directly from tables`);
+      
+      // Use table results as initial extraction
+      if (Object.keys(tableResults).length > 0) {
+        console.log('Using table-first results as baseline...');
+      }
+    }
+    
+    // STEP 3: Extract fields from the markdown (First pass)
+    console.log('Step 2: Extracting fields from Markdown (First pass)...');
+    const initialJson = await extractFieldsFromMarkdown(markdown, resolvedFields, apiKey, payerPlan);
+    
+    // Merge table-first results (if any) - table-first results have priority if confidence is high
+    if (structuredTables.length > 0) {
+      const fieldHints = payerPlan && FIELD_SUGGESTIONS[payerPlan] ? FIELD_SUGGESTIONS[payerPlan] : {};
+      
+      for (const fieldName of resolvedFields) {
+        if (!initialJson[fieldName]) {
+          const hints = fieldHints[fieldName] || [];
+          const result = searchFieldInTables(fieldName, hints, structuredTables);
+          
+          if (result && result.confidence >= 0.85) {
+            initialJson[fieldName] = result.value;
+            console.log(`✓ [Table Merge] Added "${fieldName}" from table: ${result.value}`);
+          }
+        }
+      }
+    }
+    
+    console.log('Initial field extraction complete');
+    
+    // STEP 4: Revalidate and improve extraction (Second pass)
+    console.log('Step 3: Revalidating extracted fields (Second pass)...');
+    const secondPassJson = await revalidateExtractedFields(markdown, initialJson, resolvedFields, apiKey, 1);
+    
+    console.log('Second pass validation complete');
+    
+    // STEP 5: Third validation pass for maximum accuracy
+    console.log('Step 4: Final revalidation (Third pass - cross-check)...');
+    const json = await revalidateExtractedFields(markdown, secondPassJson, resolvedFields, apiKey, 2);
+    
+    console.log('Final validation complete - all fields cross-checked');
+    
+    // STEP 6: Data Science Approach - Field-by-field extraction for missing critical fields
+    const missingFields = resolvedFields.filter(f => json[f] === null || json[f] === undefined);
+    
+    if (missingFields.length > 0 && EXTRACTION_CONFIG.FIELD_BY_FIELD_MODE) {
+      console.log(`\n=== STEP 5: Field-by-Field Extraction for ${missingFields.length} missing fields ===`);
+      
+      const fieldHints = payerPlan && FIELD_SUGGESTIONS[payerPlan] 
+        ? FIELD_SUGGESTIONS[payerPlan] 
+        : {};
+      
+      for (const fieldName of missingFields) {
+        console.log(`\nExtracting individually: ${fieldName}`);
+        const hints = fieldHints[fieldName] || [];
+        const result = await extractSingleField(markdown, fieldName, hints, apiKey);
+        
+        if (result.value !== null && result.confidence >= EXTRACTION_CONFIG.CONFIDENCE_THRESHOLD) {
+          json[fieldName] = result.value;
+          console.log(`✓ Found via single field extraction: ${fieldName} = ${result.value}`);
+        } else {
+          console.log(`✗ Still not found: ${fieldName} (confidence: ${result.confidence})`);
+        }
+      }
+    } else if (missingFields.length > 0) {
+      console.log(`\n⚠️  ${missingFields.length} fields still missing. Enable FIELD_BY_FIELD_MODE for individual extraction.`);
+      console.log(`Missing fields: ${missingFields.join(', ')}`);
+    }
     // Log what was found for debugging
     console.log(`\n=== EXTRACTION DEBUG INFO ===`);
     console.log(`Payer Plan: ${payerPlan}`);

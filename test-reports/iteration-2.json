@@ -1,0 +1,71 @@
+{
+  "iteration": 2,
+  "timestamp": "2025-11-11T11:51:15.940Z",
+  "accuracy": 46.2,
+  "fieldsTotal": 13,
+  "fieldsCorrect": 6,
+  "fieldsFailed": 7,
+  "failures": [
+    {
+      "field": "Deductible on consultation",
+      "expected": "Nil",
+      "actual": null,
+      "match": false,
+      "reason": "Field not found in extraction"
+    },
+    {
+      "field": "Co-insurance",
+      "expected": "Nil",
+      "actual": "Al Ahli Hospital Nil, Sidra Medical and Research Center Nil, Alfardan Medical with Northwestern Medicine Nil, etc.",
+      "match": false,
+      "reason": "Partial match - formatting difference"
+    },
+    {
+      "field": "Vaccinations & immunizations",
+      "expected": "Covered",
+      "actual": null,
+      "match": false,
+      "reason": "Field not found in extraction"
+    },
+    {
+      "field": "Psychiatric treatment and Psychotherapy",
+      "expected": "Covered",
+      "actual": null,
+      "match": false,
+      "reason": "Field not found in extraction"
+    },
+    {
+      "field": "Pregnancy and childbirth",
+      "expected": "Not Covered",
+      "actual": "Not covered, except for certain complications.",
+      "match": false,
+      "reason": "Partial match - formatting difference"
+    },
+    {
+      "field": "Dental Benefit",
+      "expected": "QAR 7,500, 20% co-insurance, nil deductible",
+      "actual": "Includes consultations, extractions, fillings, and root canal treatment. Not covered for veneers, implants, and whitening.",
+      "match": false,
+      "reason": "Completely different value"
+    },
+    {
+      "field": "Optical Benefit",
+      "expected": "Not Covered",
+      "actual": "Routine services covered, but not for sunglasses or corrective procedures.",
+      "match": false,
+      "reason": "Completely different value"
+    }
+  ],
+  "improvementsApplied": [
+    "Add more field variations for \"Deductible on consultation\" in field hints",
+    "Improve search instructions for \"Deductible on consultation\" in prompt",
+    "Add more field variations for \"Vaccinations & immunizations\" in field hints",
+    "Improve search instructions for \"Vaccinations & immunizations\" in prompt",
+    "Add more field variations for \"Psychiatric treatment and Psychotherapy\" in field hints",
+    "Improve search instructions for \"Psychiatric treatment and Psychotherapy\" in prompt",
+    "For \"Dental Benefit\": Review extraction logic - expected \"QAR 7,500, 20% co-insurance, nil deductible\" but got \"Includes consultations, extractions, fillings, and root canal treatment. Not covered for veneers, implants, and whitening.\"",
+    "For \"Optical Benefit\": Review extraction logic - expected \"Not Covered\" but got \"Routine services covered, but not for sunglasses or corrective procedures.\"",
+    "Emphasize OUTPATIENT priority in prompt for co-insurance and deductible fields"
+  ],
+  "timeMs": 176870
+}

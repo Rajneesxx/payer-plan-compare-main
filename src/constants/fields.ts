@@ -26,7 +26,7 @@ export const ALKOOT_FIELDS = [
   "Category", 
   "Effective Date",
   "Expiry Date", 
-  "Al Ahli Hospital",
+  "Provider-specific co-insurance at Al Ahli Hospital",
   "Co-insurance on all inpatient treatment", 
   "Deductible on consultation",
   "Co-insurance",
@@ -85,11 +85,33 @@ export const FIELD_SUGGESTIONS = {
     ]
   },
   [PAYER_PLANS.ALKOOT]: {
-    "Policy Number": [],
-    "Category": [],
-    "Effective Date": [],
-    "Expiry Date": [],
-    "Al Ahli Hospital": [
+    "Policy Number": [
+      "Policy No",
+      "Policy ID",
+      "Policy #",
+      "Contract Number",
+      "Certificate Number"
+    ],
+    "Category": [
+      "Plan",
+      "Plan Name",
+      "Policy Type",
+      "Plan Type",
+      "Category Name"
+    ],
+    "Effective Date": [
+      "Start Date",
+      "Commencement Date",
+      "Inception Date",
+      "From Date"
+    ],
+    "Expiry Date": [
+      "End Date",
+      "Termination Date",
+      "To Date",
+      "Expiration Date"
+    ],
+    "Provider-specific co-insurance at Al Ahli Hospital": [
       "Al-Ahli Hospital",
       "Al Ahli",
       "Al-Ahli",
@@ -98,27 +120,43 @@ export const FIELD_SUGGESTIONS = {
       "Additional co-insurance at Al Ahli",
       "Additional deductible at Al Ahli",
       "Al Ahli Hospital co-insurance",
-      "Co-insurance Al Ahli Hospital"
+      "Co-insurance Al Ahli Hospital",
+      "Provider-specific co-insurance/deductible"
     ],
     "Co-insurance on all inpatient treatment": [
       "Co-insurance on all inpatient treatments",
-      "In-patient co-insurance"
+      "In-patient co-insurance",
+      "Inpatient co-insurance",
+      "IPD co-insurance",
+      "In-patient co-pay"
     ],
     "Deductible on consultation": [
       "Deductible on consultations",
-      "Consultation deductible"
+      "Consultation deductible",
+      "OPD deductible",
+      "Outpatient deductible",
+      "Out-patient deductible",
+      "Deductible per consultation"
     ],
     "Co-insurance": [
       "Co-insurance",
-      "Out-patient co-insurance"
+      "Out-patient co-insurance",
+      "Outpatient co-insurance",
+      "OPD co-insurance",
+      "General co-insurance"
     ],
-    "Vaccinations and Immunizations": [
+    "Vaccinations & immunizations": [
       "Vaccination & Immunization",
       "Vaccination & Immunizations",
       "Vaccination and Immunization",
       "Vaccination and Immunizations",
       "Vaccination/Immunization",
-      "Vaccinations & Immunizations"
+      "Vaccinations & Immunizations",
+      "Vaccinations and Immunizations",
+      "Immunizations",
+      "Vaccinations",
+      "Immunization",
+      "Vaccination"
     ],
     "Psychiatric treatment and Psychotherapy": [
       "Psychiatric treatment & Psychotherapy",
@@ -132,7 +170,9 @@ export const FIELD_SUGGESTIONS = {
       "Psychological treatment",
       "Psychiatry",
       "Psychiatric services",
-      "Mental health coverage"
+      "Mental health coverage",
+      "Psychiatric services",
+      "Mental healthcare"
     ],
     "Pregnancy and childbirth": [
       "Pregnancy & Childbirth",
@@ -140,17 +180,25 @@ export const FIELD_SUGGESTIONS = {
       "Pregnancy & Childbirths",
       "Pregnancy and Child birth",
       "Pregnancy and childbirth(in accordance with Hamad Protocol/s)",
-      "Maternity"
+      "Maternity",
+      "Maternity coverage",
+      "Childbirth",
+      "Pregnancy"
     ],
     "Dental Benefit": [
       "Dental Coverage",
-      "Dental Benefits"
+      "Dental Benefits",
+      "Dental",
+      "Dental care"
     ],
     "Optical Benefit": [
       "Optical Coverage",
       "Vision Coverage",
       "Optical Benefits",
-      "Vision Benefits"
+      "Vision Benefits",
+      "Optical",
+      "Vision care",
+      "Eye care"
     ]
   }
 };
