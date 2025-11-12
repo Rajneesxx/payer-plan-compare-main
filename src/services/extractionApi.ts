@@ -1720,10 +1720,6 @@ function normalizeLabel(label: string): string {
 function formatQLMFields(normalized: ExtractedData): ExtractedData {
   const result = { ...normalized };
   
-  // Preserve exact value for Vaccination field
-  const vaccinationField = "Vaccination of children";
-  if (result[vaccinationField]) {
-    let value = result[vaccinationField] as string;
 
     // Only format if "QAR" is actually found in the extracted value
     if (typeof value === 'string') {
