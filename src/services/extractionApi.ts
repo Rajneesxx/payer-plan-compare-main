@@ -1211,13 +1211,13 @@ FIELDS TO EXTRACT:
 ${fieldsToExtract.map((field, idx) => `${idx + 1}. ${field}`).join('\n')}
 
 EXTRACTION RULES:
-1. Extract ONLY the actual values, NOT descriptions or explanations
+1. Extract ONLY the actual coverage/benefit values, NOT descriptions, conditions, or age restrictions
 2. For percentages, return just the number with % (e.g., "20%")
 3. For currency amounts, include currency and amount (e.g., "QAR 7,500", "QAR 100")
-4. For coverage limits, use exact wording (e.g., "Unlimited", "Not covered", "QAR 50,000")
+4. For coverage limits, use exact wording (e.g., "Unlimited", "Not covered", "QAR 50,000", "Covered")
 5. For multiple values (like co-insurance per hospital), list them clearly separated by commas
 6. For dates, use format: DD/MM/YYYY
-7. For "Not Found" or missing fields, return null
+7. For "Not Found" or missing fields, return "Nil"
 8. Be precise - extract exactly what's in the document, no interpretation
 
 IMPORTANT:
@@ -1226,7 +1226,22 @@ IMPORTANT:
 - For fields like Policy Number, Category, Effective Date - check the header section
 - For benefits like co-insurance, deductibles, coverage - check benefits tables
 
-if any field is null or not found, then send it as "Nil" in the output.
+CRITICAL - VALUE vs DESCRIPTION:
+- In tables, the VALUE is typically in the coverage/benefit column (often the rightmost column)
+- Age restrictions, conditions, or regulatory notes are NOT the value - they are descriptions
+- Example: If a table shows "Vaccination of children | Covered | Up to age 6 years per MoH regulations"
+  → Extract "Covered" (the value), NOT "Up to age 6 years per MoH regulations" (the description)
+- Example: If it shows "Dental | QAR 500 | Annual limit"
+  → Extract "QAR 500" (the value), NOT "Annual limit" (the description)
+- If the table structure shows: Field Name | Coverage Status | Additional Notes
+  → Extract from the Coverage Status column, not the Additional Notes column
+
+SPECIAL FIELD INSTRUCTIONS:
+- "Vaccination of children": Look for coverage status (Covered/Not covered/QAR amount), ignore age limits or regulations
+- Benefits with amounts: Extract the QAR amount or percentage, not the conditions
+- Coverage fields: Extract "Covered", "Not covered", "Nil", or specific amounts only
+
+If any field is null or not found, then send it as "Nil" in the output.
   
 DOCUMENT TEXT:
 ${pdfText}
@@ -1735,26 +1750,43 @@ function formatQLMFields(normalized: ExtractedData): ExtractedData {
     } else if (lowerValue === 'nil' || lowerValue === 'null') {
       result[vaccinationField] = 'Nil';
     } else {
-      // Handle numeric values with currency formatting - but only if it starts with QAR or a number
-      const startsWithQAR = /^qar\s*\d/i.test(lowerValue);
-      const startsWithNumber = /^\d/.test(lowerValue.trim());
+      // Check if this is a description/condition text (contains age, years, regulation, etc.)
+      const isDescriptionText = lowerValue.includes('age') || 
+                               lowerValue.includes('year') || 
+                               lowerValue.includes('regulation') ||
+                               lowerValue.includes('ministry') ||
+                               lowerValue.includes('school') ||
+                               lowerValue.includes('based on');
       
-      if (startsWithQAR || (startsWithNumber && !lowerValue.includes('age') && !lowerValue.includes('year'))) {
-        const numberMatch = value.match(/(\d[\d,\.]*)/);
-        if (numberMatch) {
-          if (!lowerValue.includes('qar')) {
-            // Add QAR formatting if it has a number but no QAR
-            result[vaccinationField] = `QAR ${numberMatch[1]}/PPPY`;
-          } else if (lowerValue.includes('qar')) {
-            // Ensure consistent formatting for QAR values
-            const formattedNumber = numberMatch[1].replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-            if (!lowerValue.includes('/pppy')) {
-              result[vaccinationField] = `QAR ${formattedNumber}/PPPY`;
+      if (isDescriptionText) {
+        // This looks like a description, not a value - default to 'Covered'
+        console.warn(`[QLM Format] Vaccination field contains description text: "${value}" - defaulting to "Covered"`);
+        result[vaccinationField] = 'Covered';
+      } else {
+        // Handle numeric values with currency formatting - but only if it starts with QAR or a number
+        const startsWithQAR = /^qar\s*\d/i.test(lowerValue);
+        const startsWithNumber = /^\d/.test(lowerValue.trim());
+        
+        if (startsWithQAR || startsWithNumber) {
+          const numberMatch = value.match(/(\d[\d,\.]*)/);
+          if (numberMatch) {
+            if (!lowerValue.includes('qar')) {
+              // Add QAR formatting if it has a number but no QAR
+              result[vaccinationField] = `QAR ${numberMatch[1]}/PPPY`;
+            } else if (lowerValue.includes('qar')) {
+              // Ensure consistent formatting for QAR values
+              const formattedNumber = numberMatch[1].replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+              if (!lowerValue.includes('/pppy')) {
+                result[vaccinationField] = `QAR ${formattedNumber}/PPPY`;
+              } else {
+                // Already has /PPPY, keep as is
+                result[vaccinationField] = value;
+              }
             }
           }
         }
+        // If none of the above, keep the original value as-is
       }
-      // If none of the above, keep the original value as-is
     }
   }
   
