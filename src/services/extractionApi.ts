@@ -1719,23 +1719,42 @@ function normalizeLabel(label: string): string {
 function formatQLMFields(normalized: ExtractedData): ExtractedData {
   const result = { ...normalized };
   
-  // Preserve exact value for Vaccination field - DO NOT auto-format
+  // Preserve exact value for Vaccination field
   const vaccinationField = "Vaccination of children";
   if (result[vaccinationField]) {
     let value = result[vaccinationField] as string;
     
-    // Handle common cases - preserve exact values from PDF
+    // Handle common cases
     const lowerValue = value.toLowerCase().trim();
-    if (lowerValue === 'covered') {
+    
+    // Check for "covered" anywhere in the text first (most important check)
+    if (lowerValue.includes('covered') && !lowerValue.includes('not covered')) {
       result[vaccinationField] = 'Covered';
-    } else if (lowerValue === 'not covered') {
+    } else if (lowerValue === 'not covered' || lowerValue.includes('not covered')) {
       result[vaccinationField] = 'Not covered';
-    } else if (lowerValue === 'nil') {
+    } else if (lowerValue === 'nil' || lowerValue === 'null') {
       result[vaccinationField] = 'Nil';
     } else {
-      // Keep the exact value as extracted from PDF
-      // DO NOT add /PPPY or modify formatting unless it's already in the source
-      result[vaccinationField] = value.trim();
+      // Handle numeric values with currency formatting - but only if it starts with QAR or a number
+      const startsWithQAR = /^qar\s*\d/i.test(lowerValue);
+      const startsWithNumber = /^\d/.test(lowerValue.trim());
+      
+      if (startsWithQAR || (startsWithNumber && !lowerValue.includes('age') && !lowerValue.includes('year'))) {
+        const numberMatch = value.match(/(\d[\d,\.]*)/);
+        if (numberMatch) {
+          if (!lowerValue.includes('qar')) {
+            // Add QAR formatting if it has a number but no QAR
+            result[vaccinationField] = `QAR ${numberMatch[1]}/PPPY`;
+          } else if (lowerValue.includes('qar')) {
+            // Ensure consistent formatting for QAR values
+            const formattedNumber = numberMatch[1].replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+            if (!lowerValue.includes('/pppy')) {
+              result[vaccinationField] = `QAR ${formattedNumber}/PPPY`;
+            }
+          }
+        }
+      }
+      // If none of the above, keep the original value as-is
     }
   }
   
@@ -2046,4 +2065,3 @@ export async function convertPDFToMarkdownApi(
   assertKey(apiKey);
   return convertPDFToMarkdown(file, apiKey);
 }
-
