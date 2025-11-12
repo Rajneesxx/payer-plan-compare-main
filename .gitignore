@@ -2,3 +2,7 @@ node_modules
 
 # Local Netlify folder
 .netlify
+test*.pdf
+*.pdf
+node_modules/
+dist/
