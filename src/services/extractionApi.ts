@@ -1749,8 +1749,13 @@ function formatQLMFields(normalized: ExtractedData): ExtractedData {
     // Handle common cases
     const lowerValue = value.toLowerCase().trim();
     
+    // Priority 0: Check for specific QLM pattern "Up to the school age (age of 6 years)" - return "Covered"
+    if (lowerValue.includes('up to') && lowerValue.includes('school age') && lowerValue.includes('6 years')) {
+      console.log(`[QLM Format] Vaccination field contains "Up to the school age (age of 6 years)" - converting to "Covered"`);
+      result[vaccinationField] = 'Covered';
+    }
     // Priority 1: Check for explicit "Not covered" - this is the only case we don't default to "Covered"
-    if (lowerValue === 'not covered' || lowerValue.includes('not covered')) {
+    else if (lowerValue === 'not covered' || lowerValue.includes('not covered')) {
       result[vaccinationField] = 'Not covered';
     }
     // Priority 2: Check for "covered" anywhere in the text
@@ -1776,25 +1781,14 @@ function formatQLMFields(normalized: ExtractedData): ExtractedData {
         }
       }
     }
-    // Priority 4: Check if this is description/condition text OR "Nil" - default to "Covered"
+    // Priority 4: Check for "Nil" - default to "Covered"
+    else if (lowerValue === 'nil' || lowerValue === 'null' || lowerValue === 'n/a') {
+      console.warn(`[QLM Format] Vaccination field is "${value}" - defaulting to "Covered" (QLM policy: vaccination is covered unless explicitly stated otherwise)`);
+      result[vaccinationField] = 'Covered';
+    }
+    // Priority 5: Keep the actual extracted value as-is (don't convert other description text)
     else {
-      const isDescriptionText = lowerValue.includes('age') || 
-                               lowerValue.includes('year') || 
-                               lowerValue.includes('regulation') ||
-                               lowerValue.includes('ministry') ||
-                               lowerValue.includes('school') ||
-                               lowerValue.includes('based on');
-      
-      const isNilOrNull = lowerValue === 'nil' || lowerValue === 'null' || lowerValue === 'n/a';
-      
-      if (isDescriptionText || isNilOrNull) {
-        // This looks like a description or Nil - default to 'Covered' as per QLM requirements
-        console.warn(`[QLM Format] Vaccination field is "${value}" - defaulting to "Covered" (QLM policy: vaccination is covered unless explicitly stated otherwise)`);
-        result[vaccinationField] = 'Covered';
-      } else {
-        // Keep original value as-is if it's something else
-        result[vaccinationField] = value;
-      }
+      result[vaccinationField] = value;
     }
   } else {
     // If field is completely missing or null, default to "Covered" for QLM
@@ -2109,4 +2103,3 @@ export async function convertPDFToMarkdownApi(
   assertKey(apiKey);
   return convertPDFToMarkdown(file, apiKey);
 }
-
