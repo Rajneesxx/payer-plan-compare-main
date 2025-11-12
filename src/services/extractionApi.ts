@@ -1237,11 +1237,18 @@ CRITICAL - VALUE vs DESCRIPTION:
   → Extract from the Coverage Status column, not the Additional Notes column
 
 SPECIAL FIELD INSTRUCTIONS:
-- "Vaccination of children": Look for coverage status (Covered/Not covered/QAR amount), ignore age limits or regulations
+- "Vaccination of children": 
+  * First priority: Look for exact coverage value (QAR amount, percentage, or "Covered"/"Not covered")
+  * Extract from the coverage/benefit column, NOT from description/conditions columns
+  * Ignore age limits, regulations, or Ministry of Health references - these are conditions, not values
+  * If you find description text only (like "Up to age 6" or "Based on MoH regulations"), return "Covered" as default
+  * Only return "Nil" or "Not covered" if explicitly stated
 - Benefits with amounts: Extract the QAR amount or percentage, not the conditions
 - Coverage fields: Extract "Covered", "Not covered", "Nil", or specific amounts only
 
-If any field is null or not found, then send it as "Nil" in the output.
+IMPORTANT - Default Values:
+- For "Vaccination of children": If unclear or only description found, default to "Covered"
+- For other fields: If null or not found, send as "Nil"
   
 DOCUMENT TEXT:
 ${pdfText}
@@ -1742,15 +1749,35 @@ function formatQLMFields(normalized: ExtractedData): ExtractedData {
     // Handle common cases
     const lowerValue = value.toLowerCase().trim();
     
-    // Check for "covered" anywhere in the text first (most important check)
-    if (lowerValue.includes('covered') && !lowerValue.includes('not covered')) {
-      result[vaccinationField] = 'Covered';
-    } else if (lowerValue === 'not covered' || lowerValue.includes('not covered')) {
+    // Priority 1: Check for explicit "Not covered" - this is the only case we don't default to "Covered"
+    if (lowerValue === 'not covered' || lowerValue.includes('not covered')) {
       result[vaccinationField] = 'Not covered';
-    } else if (lowerValue === 'nil' || lowerValue === 'null') {
-      result[vaccinationField] = 'Nil';
-    } else {
-      // Check if this is a description/condition text (contains age, years, regulation, etc.)
+    }
+    // Priority 2: Check for "covered" anywhere in the text
+    else if (lowerValue.includes('covered')) {
+      result[vaccinationField] = 'Covered';
+    }
+    // Priority 3: Check for exact QAR amounts or numbers at start
+    else if (/^qar\s*\d/i.test(lowerValue) || (/^\d/.test(lowerValue) && !lowerValue.includes('age') && !lowerValue.includes('year'))) {
+      const numberMatch = value.match(/(\d[\d,\.]*)/);
+      if (numberMatch) {
+        if (!lowerValue.includes('qar')) {
+          // Add QAR formatting if it has a number but no QAR
+          result[vaccinationField] = `QAR ${numberMatch[1]}/PPPY`;
+        } else if (lowerValue.includes('qar')) {
+          // Ensure consistent formatting for QAR values
+          const formattedNumber = numberMatch[1].replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+          if (!lowerValue.includes('/pppy')) {
+            result[vaccinationField] = `QAR ${formattedNumber}/PPPY`;
+          } else {
+            // Already has /PPPY, keep as is
+            result[vaccinationField] = value;
+          }
+        }
+      }
+    }
+    // Priority 4: Check if this is description/condition text OR "Nil" - default to "Covered"
+    else {
       const isDescriptionText = lowerValue.includes('age') || 
                                lowerValue.includes('year') || 
                                lowerValue.includes('regulation') ||
@@ -1758,36 +1785,21 @@ function formatQLMFields(normalized: ExtractedData): ExtractedData {
                                lowerValue.includes('school') ||
                                lowerValue.includes('based on');
       
-      if (isDescriptionText) {
-        // This looks like a description, not a value - default to 'Covered'
-        console.warn(`[QLM Format] Vaccination field contains description text: "${value}" - defaulting to "Covered"`);
+      const isNilOrNull = lowerValue === 'nil' || lowerValue === 'null' || lowerValue === 'n/a';
+      
+      if (isDescriptionText || isNilOrNull) {
+        // This looks like a description or Nil - default to 'Covered' as per QLM requirements
+        console.warn(`[QLM Format] Vaccination field is "${value}" - defaulting to "Covered" (QLM policy: vaccination is covered unless explicitly stated otherwise)`);
         result[vaccinationField] = 'Covered';
       } else {
-        // Handle numeric values with currency formatting - but only if it starts with QAR or a number
-        const startsWithQAR = /^qar\s*\d/i.test(lowerValue);
-        const startsWithNumber = /^\d/.test(lowerValue.trim());
-        
-        if (startsWithQAR || startsWithNumber) {
-          const numberMatch = value.match(/(\d[\d,\.]*)/);
-          if (numberMatch) {
-            if (!lowerValue.includes('qar')) {
-              // Add QAR formatting if it has a number but no QAR
-              result[vaccinationField] = `QAR ${numberMatch[1]}/PPPY`;
-            } else if (lowerValue.includes('qar')) {
-              // Ensure consistent formatting for QAR values
-              const formattedNumber = numberMatch[1].replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-              if (!lowerValue.includes('/pppy')) {
-                result[vaccinationField] = `QAR ${formattedNumber}/PPPY`;
-              } else {
-                // Already has /PPPY, keep as is
-                result[vaccinationField] = value;
-              }
-            }
-          }
-        }
-        // If none of the above, keep the original value as-is
+        // Keep original value as-is if it's something else
+        result[vaccinationField] = value;
       }
     }
+  } else {
+    // If field is completely missing or null, default to "Covered" for QLM
+    console.warn(`[QLM Format] Vaccination field is null/missing - defaulting to "Covered" (QLM policy: vaccination is covered unless explicitly stated otherwise)`);
+    result[vaccinationField] = 'Covered';
   }
   
 
@@ -2097,3 +2109,4 @@ export async function convertPDFToMarkdownApi(
   assertKey(apiKey);
   return convertPDFToMarkdown(file, apiKey);
 }
+
