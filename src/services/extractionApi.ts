@@ -1718,34 +1718,6 @@ function normalizeLabel(label: string): string {
 // Format QLM specific fields
 function formatQLMFields(normalized: ExtractedData): ExtractedData {
   const result = { ...normalized };
-  
-  // Preserve exact value for Vaccination field
-  const vaccinationField = "Vaccination of children";
-  if (result[vaccinationField]) {
-    let value = result[vaccinationField] as string;
-    
-    // Handle common cases
-    const lowerValue = value.toLowerCase().trim();
-    if (lowerValue === 'covered') {
-      result[vaccinationField] = 'Covered';
-    } else if (lowerValue === 'not covered') {
-      result[vaccinationField] = 'Not covered';
-    } else if (lowerValue === 'nil') {
-      result[vaccinationField] = 'Nil';
-    } else {
-      // Handle numeric values with currency formatting
-      const numberMatch = value.match(/(\d[\d,\.]*)/); 
-      if (numberMatch && !lowerValue.includes('qar')) {
-        // Add QAR formatting if it has a number but no QAR
-        result[vaccinationField] = `QAR ${numberMatch[1]}/PPPY`;
-      } else if (numberMatch && lowerValue.includes('qar')) {
-        // Ensure consistent formatting for QAR values
-        const formattedNumber = numberMatch[1].replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-        if (!lowerValue.includes('/pppy')) {
-          result[vaccinationField] = `QAR ${formattedNumber}/PPPY`;
-        }
-      }
-    }
   }
   
 
