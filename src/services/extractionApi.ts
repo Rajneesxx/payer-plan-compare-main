@@ -1719,12 +1719,12 @@ function normalizeLabel(label: string): string {
 function formatQLMFields(normalized: ExtractedData): ExtractedData {
   const result = { ...normalized };
   
-  // Preserve exact value for Vaccination field
+  // Preserve exact value for Vaccination field - DO NOT auto-format
   const vaccinationField = "Vaccination of children";
   if (result[vaccinationField]) {
     let value = result[vaccinationField] as string;
     
-    // Handle common cases
+    // Handle common cases - preserve exact values from PDF
     const lowerValue = value.toLowerCase().trim();
     if (lowerValue === 'covered') {
       result[vaccinationField] = 'Covered';
@@ -1733,18 +1733,9 @@ function formatQLMFields(normalized: ExtractedData): ExtractedData {
     } else if (lowerValue === 'nil') {
       result[vaccinationField] = 'Nil';
     } else {
-      // Handle numeric values with currency formatting
-      const numberMatch = value.match(/(\d[\d,\.]*)/); 
-      if (numberMatch && !lowerValue.includes('qar')) {
-        // Add QAR formatting if it has a number but no QAR
-        result[vaccinationField] = `QAR ${numberMatch[1]}/PPPY`;
-      } else if (numberMatch && lowerValue.includes('qar')) {
-        // Ensure consistent formatting for QAR values
-        const formattedNumber = numberMatch[1].replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-        if (!lowerValue.includes('/pppy')) {
-          result[vaccinationField] = `QAR ${formattedNumber}/PPPY`;
-        }
-      }
+      // Keep the exact value as extracted from PDF
+      // DO NOT add /PPPY or modify formatting unless it's already in the source
+      result[vaccinationField] = value.trim();
     }
   }
   
@@ -2055,3 +2046,4 @@ export async function convertPDFToMarkdownApi(
   assertKey(apiKey);
   return convertPDFToMarkdown(file, apiKey);
 }
+
