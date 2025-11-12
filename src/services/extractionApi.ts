@@ -1747,10 +1747,6 @@ function formatQLMFields(normalized: ExtractedData): ExtractedData {
     }
   }
 
-  // Rest of your logic unchanged...
-  // (standardize other copayment/coinsurance fields etc.)
-
-  return result;
 }
   
 
